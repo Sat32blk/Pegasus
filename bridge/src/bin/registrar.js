@@ -16,6 +16,7 @@
 //  - A driver is only deleted when the hub reports it as removed (uninstalled there). One that is
 //    stopped, crashed or offline is left alone.
 
+import { WebSocket } from "ws";
 import { remoteDriverId } from "./linkproto.js";
 
 const PORT_BASE = 9700;
@@ -27,7 +28,8 @@ export class Registrar {
    * @param {object} o.state  persisted: { hosted: { <hubId>: { remoteId?, port, name, version } } }
    * @param {function} o.onChange  called with { <hubId>: <remoteId> } whenever registrations change
    */
-  constructor({ getCore, tunnels, state, save, log = () => {}, removeOnUninstall = () => true, onChange = () => {} }) {
+  constructor({ getCore, tunnels, state, save, log = () => {}, removeOnUninstall = () => true, onChange = () => {}, fetchMetadata = driverMetadata }) {
+    this.fetchMetadata = fetchMetadata;
     this.getCore = getCore;
     this.tunnels = tunnels;
     this.state = state;
@@ -160,15 +162,21 @@ export class Registrar {
     }
   }
 
+  /**
+   * Registers a driver. The remote's API needs more than its documentation says (it refused a
+   * registration without "version"), so the body carries the same fields as Unfolded Circle's own
+   * registration example, filled from the driver's own metadata (asked through our endpoint, i.e.
+   * exactly what the core will read), falling back to what the hub's catalog says.
+   */
   async #post(core, id, d, url) {
     this.log(`${id}: registering with the remote at ${url}`);
-    await core.post("/intg/drivers", {
-      driver_id: id,
-      driver_url: url,
-      name: { en: d.name },
-      icon: String(d.icon || "").startsWith("uc:") ? d.icon : "uc:integration",
-      enabled: true
-    });
+    let meta = {};
+    try {
+      meta = (await this.fetchMetadata(url)) || {};
+    } catch (e) {
+      this.log(`${id}: could not read the driver's details (${e.message}); using the hub's`);
+    }
+    await core.post("/intg/drivers", registrationBody(id, url, meta, d));
     this.log(`${id}: registered on the remote (${d.name} ${d.version}) -> ${url}`);
   }
 
@@ -246,4 +254,53 @@ export class Registrar {
     this.notes.delete(hubId);
     this.save();
   }
+}
+
+const lang = (v, fallback) => (v && typeof v === "object" && Object.keys(v).length ? v : { en: String((typeof v === "string" && v) || fallback || "") });
+
+/** Body for POST /intg/drivers, shaped like Unfolded Circle's registration example. */
+export function registrationBody(id, url, meta, d) {
+  const icon = String(meta.icon || d.icon || "");
+  const body = {
+    driver_id: id,
+    name: lang(meta.name, d.name || id),
+    driver_url: url,
+    version: String(meta.version || d.version || "0.0.0").slice(0, 20),
+    icon: /^[a-z][a-z0-9]+:[A-Za-z0-9._-]+$/.test(icon) && !icon.startsWith("custom:") ? icon : "uc:integration",
+    enabled: true,
+    description: lang(meta.description, ""),
+    device_discovery: !!meta.device_discovery,
+    setup_data_schema: meta.setup_data_schema && typeof meta.setup_data_schema === "object" ? meta.setup_data_schema : {}
+  };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(meta.release_date || ""))) body.release_date = meta.release_date;
+  return body;
+}
+
+/** Asks a driver for its metadata over the Integration API (what the core does when registering). */
+export function driverMetadata(url, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, { perMessageDeflate: false, handshakeTimeout: timeoutMs });
+    const done = (fn, v) => {
+      clearTimeout(t);
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      fn(v);
+    };
+    const t = setTimeout(() => done(reject, new Error("no answer")), timeoutMs);
+    ws.on("open", () => ws.send(JSON.stringify({ kind: "req", id: 1, msg: "get_driver_metadata" })));
+    ws.on("message", (data) => {
+      let m;
+      try {
+        m = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+      if (m.kind === "resp" && m.req_id === 1) done(resolve, m.msg_data || {});
+    });
+    ws.on("error", (e) => done(reject, e));
+    ws.on("close", () => done(reject, new Error("closed before answering")));
+  });
 }

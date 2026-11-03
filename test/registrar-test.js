@@ -1,6 +1,6 @@
 // The Bridge's ID rules: real driver_id first, pgs_ fallback when taken, never touch what isn't ours.
 import assert from "node:assert/strict";
-import { Registrar } from "../bridge/src/bin/registrar.js";
+import { Registrar, registrationBody } from "../bridge/src/bin/registrar.js";
 
 class FakeCore {
   constructor(drivers = {}) {
@@ -17,6 +17,8 @@ class FakeCore {
   }
   async post(p, b) {
     this.calls.push(`POST ${b.driver_id}`);
+    // the real remote refuses a registration without these (found on firmware, Nov 2026)
+    for (const f of ["driver_url", "name", "version"]) if (!b[f]) throw Object.assign(new Error(`HTTP 400 Missing field: ${f}`), { status: 400 });
     if (this.d.has(b.driver_id)) throw this.err(422);
     this.d.set(b.driver_id, { ...b, driver_type: "EXTERNAL" });
   }
@@ -49,7 +51,7 @@ class FakeTunnels {
 const drv = (id, driver_id, extra = {}) => ({ id, driver_id, name: id, version: "1.0.0", icon: "uc:tv", state: "running", ...extra });
 function make(core, state = {}) {
   const changes = [];
-  const r = new Registrar({ getCore: () => core, tunnels: new FakeTunnels(), state, save: () => {}, onChange: (m) => changes.push(m) });
+  const r = new Registrar({ getCore: () => core, tunnels: new FakeTunnels(), state, save: () => {}, onChange: (m) => changes.push(m), fetchMetadata: async () => ({}) });
   return { r, state, changes };
 }
 let n = 0;
@@ -142,5 +144,18 @@ const realRemote = () =>
   assert.ok(!state.hosted.down.remoteId);
   assert.match(r.summary().problems.find(([id]) => id === "down")[1], /crashed/);
   ok("invalid driver_id → pgs_; not running → waits, nothing registered");
+}
+{
+  const meta = { driver_id: "uc-intg-govee", version: "0.3.5", name: { en: "Govee", de: "Govee" }, description: { en: "Lights" }, icon: "uc:g", release_date: "2025-10-23", setup_data_schema: { title: { en: "x" }, settings: [] }, port: 9090, mdns: {} };
+  const b = registrationBody("uc-intg-govee", "ws://127.0.0.1:9700", meta, drv("uc-intg-govee", "uc-intg-govee"));
+  assert.deepEqual(Object.keys(b).sort(), ["description", "device_discovery", "driver_id", "driver_url", "enabled", "icon", "name", "release_date", "setup_data_schema", "version"].sort());
+  assert.equal(b.version, "0.3.5");
+  assert.deepEqual(b.name, { en: "Govee", de: "Govee" });
+  const fb = registrationBody("x", "ws://127.0.0.1:9701", {}, drv("x", "x", { name: "X", version: "1.2.3", icon: "custom:x.png" }));
+  assert.equal(fb.version, "1.2.3");
+  assert.deepEqual(fb.name, { en: "X" });
+  assert.equal(fb.icon, "uc:integration");
+  assert.ok(!("release_date" in fb));
+  ok("registration body: the fields of UC's example, from the driver's own details (hub's as fallback)");
 }
 console.log(`registrar-test: ${n} checks ok`);

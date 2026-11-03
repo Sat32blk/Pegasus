@@ -88,6 +88,8 @@ function mockCore() {
     if (req.method === "GET") return drivers.has(id) ? send(200, drivers.get(id)) : send(404, { message: "not found" });
     if (req.method === "POST" && !id) {
       const b = JSON.parse(body);
+      // the real remote refuses a registration without these
+      for (const f of ["driver_url", "name", "version"]) if (!b[f]) return send(400, { message: `Missing field: ${f}` });
       // like the real core: contact the driver and fetch its metadata before accepting it
       try {
         const s = await coreSession(b.driver_url);
@@ -167,6 +169,8 @@ try {
   assert.ok(![...core.drivers.keys()].some((k) => k.startsWith("pgs_")), "registered under a pgs_ ID");
   assert.match(dn.driver_url, /^ws:\/\/127\.0\.0\.1:97\d\d$/);
   assert.equal(dn.metadata.driver_id, "sim_node");
+  assert.equal(dn.version, "1.0.0");
+  assert.ok(dn.setup_data_schema && dn.description, "registered without the driver's details");
   assert.equal(dp.metadata.driver_id, "sim_python");
   console.log(`  sim_node   -> ${dn.driver_url}  (metadata name: ${dn.metadata.name.en})`);
   console.log(`  sim_python -> ${dp.driver_url}  (metadata name: ${dp.metadata.name.en})`);
