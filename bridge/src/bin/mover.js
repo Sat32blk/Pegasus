@@ -321,6 +321,17 @@ export class Mover {
     const remote = this.remote();
     const mv = this.state.moves[driverId];
 
+    // save every use first, while the hub copy still runs: the remote can only list an
+    // integration's entities while it is active
+    const inst = (await remote.instancesOf(driverId))[0] || null;
+    let snap = null;
+    if (inst) {
+      this.#step(driverId, "snapshot", `saving every place ${inst.integration_id} is used`);
+      snap = await remote.snapshot(inst.integration_id);
+      mv.snapshotFile = this.#saveSnapshot(driverId, snap);
+      this.#step(driverId, "snapshot", `saved: ${describeRefs(snap.references)}`);
+    }
+
     this.#step(driverId, "hub package", "the hub stops the integration and packs the remote's release with its current settings");
     const pkg = await this.link.call("move.prepareBack", { hubId: mv.hubId }, 20 * 60 * 1000);
     this.#step(driverId, "download", `fetching ${pkg.filename} (${Math.round(pkg.size / 1024)} KB) from the hub`);
@@ -334,15 +345,6 @@ export class Mover {
     }
     const archive = Buffer.concat(parts);
     if (crypto.createHash("sha256").update(archive).digest("hex") !== pkg.sha256) throw new Error("the archive arrived damaged (checksum mismatch)");
-
-    const inst = (await remote.instancesOf(driverId))[0] || null;
-    let snap = null;
-    if (inst) {
-      this.#step(driverId, "snapshot", `saving every place ${inst.integration_id} is used`);
-      snap = await remote.snapshot(inst.integration_id);
-      mv.snapshotFile = this.#saveSnapshot(driverId, snap);
-      this.#step(driverId, "snapshot", `saved: ${describeRefs(snap.references)}`);
-    }
 
     const d = await remote.driver(driverId);
     if (mv.viaStandIn) {

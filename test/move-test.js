@@ -229,6 +229,32 @@ try {
   assert.deepEqual(view(), before, "references differ after moving back from the stand-in");
   console.log("  the original is installed again with the hub's settings; every reference back");
 
+  step("a move back saved by Bridge 0.3.3 (no entities in its snapshot) is finished by Retry");
+  await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+  assert.equal((await waitMove("sim_node")).status, "done");
+  remote.failOnce((m, p) => m === "PATCH" && p.startsWith("/api/activities/"));
+  await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+  const stuck = await waitMove("sim_node");
+  assert.equal(stuck.status, "failed");
+  // what 0.3.3 left behind: a snapshot with no entities, and an instance with none selected
+  const snapFile = mover.state.moves.sim_node.snapshotFile;
+  const oldSnap = JSON.parse(fs.readFileSync(snapFile, "utf8"));
+  fs.writeFileSync(snapFile, JSON.stringify({ ...oldSnap, configured: [] }));
+  const si = remote.instances.get("sim_node.main");
+  si.configured = [];
+  for (const k of [...remote.entities.keys()]) if (k.startsWith("sim_node.main.")) remote.entities.delete(k);
+  mover.retry("sim_node");
+  const healed = await waitMove("sim_node");
+  console.log("  " + healed.log.slice(-4).join("\n  "));
+  assert.equal(healed.status, "done", healed.error);
+  assert.deepEqual(view(), before, "references differ after retrying the stuck move back");
+  console.log("  the entities the saved activities use were selected again, and every reference is back");
+  {
+    const { entityIdsOf } = await import("../bridge/src/bin/remote.js");
+    assert.deepEqual(entityIdsOf({ ...oldSnap, configured: [], entities: [] }), ["sim_switch"], "references alone name the entity");
+    console.log("  even with no entity list at all, the saved references name every entity to select");
+  }
+
   step("integrations that control the remote can't move");
   const selfArchive = createTarGz(entries.map((e) => (e.name.endsWith("driver.json") ? { ...e, data: JSON.stringify({ ...driverJson, driver_id: "self_control" }) } : e)));
   remote.install(selfArchive, false);

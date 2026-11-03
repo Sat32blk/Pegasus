@@ -7,6 +7,7 @@
 //    activities (entities, sequences, buttons, pages), macros, home pages and groups
 //  - registering an external driver requires driver_url, name and version
 //  - a driver's instance is <driver_id>.main; entities are <instance>.<entity id>
+//  - listing an instance's entities fails with "Integration is not active" while its driver is down
 
 import fs from "node:fs";
 import os from "node:os";
@@ -14,6 +15,7 @@ import path from "node:path";
 import http from "node:http";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { WebSocket } from "ws";
 import { readTarGz } from "../bridge/src/bin/tar.js";
 
 const freePort = () =>
@@ -119,6 +121,36 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
     const d = drivers.get(id);
     return { ...d.meta, driver_id: id, driver_type: d.type, driver_state: "ACTIVE", ...(d.type === "EXTERNAL" ? { driver_url: d.meta.driver_url } : {}) };
   };
+  /** Whether a driver's program answers (custom: its process; external: its URL takes a connection). */
+  const active = (id) => {
+    const d = drivers.get(id);
+    if (!d) return Promise.resolve(false);
+    if (d.type === "CUSTOM") return Promise.resolve(!!d.proc && d.proc.exitCode === null);
+    // like the core's own session with an external driver: it has to answer, not just accept
+    return new Promise((r) => {
+      let ws;
+      const done = (ok) => {
+        clearTimeout(t);
+        try { ws?.terminate(); } catch {}
+        r(ok);
+      };
+      const t = setTimeout(() => done(false), 1500);
+      try {
+        ws = new WebSocket(d.meta.driver_url || "ws://127.0.0.1:1");
+      } catch {
+        return done(false);
+      }
+      ws.on("open", () => ws.send(JSON.stringify({ kind: "req", id: 1, msg: "get_driver_version" })));
+      ws.on("message", (m) => {
+        try {
+          const j = JSON.parse(m);
+          if (j.kind === "resp" && j.req_id === 1) done(true);
+        } catch {}
+      });
+      ws.on("error", () => done(false));
+      ws.on("close", () => done(false));
+    });
+  };
   const paged = (list, url) => {
     const limit = Number(url.searchParams.get("limit") || 100);
     const page = Number(url.searchParams.get("page") || 1);
@@ -187,7 +219,9 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
         if (!inst) return send(404, { message: "not found" });
         if (!p[3] && M === "GET") return send(200, (({ configured, ...i }) => i)(inst));
         if (p[3] === "entities" && M === "GET") {
-          // like the real core: the driver's entity list is only known after a reload (or earlier use)
+          // like the real core: listing needs the integration to be running ("Integration is not active")
+          if (!(await active(inst.driver_id))) return send(400, { code: "BAD_REQUEST", message: "Integration is not active" });
+          // and the driver's entity list is only known after a reload (or earlier use)
           if (url.searchParams.get("reload") === "true") inst.loaded = true;
           const offered = inst.loaded || inst.configured.length ? [...new Set([...(offers.get(inst.driver_id) || []), ...inst.configured])] : [];
           const filter = url.searchParams.get("filter") || "NEW";

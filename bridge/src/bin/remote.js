@@ -79,7 +79,12 @@ export class RemoteOps {
     const uses = (o) => JSON.stringify(o).includes(prefix);
     const snap = { kind: "pegasis-move-snapshot", format: 1, created: new Date().toISOString(), instanceId };
     snap.instance = await this.getOrNull(`/intg/instances/${enc(instanceId)}`);
-    snap.configured = (await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=CONFIGURED`).catch(() => []))
+    // which entities are selected: asked from the instance (only works while the integration is
+    // running), and also read from the remote's entity list (works always); merged in entityIdsOf()
+    snap.configured = (await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=CONFIGURED`).catch((e) => {
+      snap.configuredError = e.message;
+      return [];
+    }))
       .map((e) => e.entity_id)
       .filter(Boolean);
     snap.entities = (await this.all("/entities"))
@@ -208,7 +213,7 @@ export class RemoteOps {
       if (!inst?.integration_id) inst = (await this.instancesOf(driverId))[0];
     }
     if (!inst?.integration_id) throw new Error(`the remote did not create an instance for ${driverId}`);
-    const ids = snapshot.configured || [];
+    const ids = entityIdsOf(snapshot);
     if (ids.length) await this.configureEntities(inst.integration_id, snapshot.instanceId, ids);
     return inst.integration_id;
   }
@@ -267,6 +272,22 @@ export class RemoteOps {
   }
 }
 
+/**
+ * The integration's own IDs of every entity a snapshot needs selected: the ones the instance said
+ * were selected, the ones in the remote's entity list, and every one the saved activities, macros
+ * and pages refer to (so even a snapshot taken while the integration was down is complete).
+ */
+export function entityIdsOf(snap) {
+  const prefix = snap.instanceId + ".";
+  const own = (x) => (String(x).startsWith(prefix) ? String(x).slice(prefix.length) : String(x));
+  const ids = new Set((snap.configured || []).map(own));
+  for (const e of snap.entities || []) if (e?.entity_id) ids.add(own(e.entity_id));
+  const text = JSON.stringify({ a: snap.activities, m: snap.macros, p: snap.profilePages, g: snap.profileGroups });
+  const re = new RegExp(`"${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^"]+)"`, "g");
+  for (const m of text.matchAll(re)) ids.add(m[1]);
+  return [...ids].filter(Boolean);
+}
+
 /** Number of references to the instance in each part of a snapshot (used to check a restore). */
 export function countRefs(snap, prefix) {
   const n = (o) => JSON.stringify(o ?? null).split(prefix).length - 1;
@@ -275,7 +296,7 @@ export function countRefs(snap, prefix) {
   for (const m of snap.macros || []) out[`macro ${m.entity_id}`] = n(m.options);
   for (const { profileId, page } of snap.profilePages || []) out[`home page ${profileId}/${page.page_id}`] = n(page.items);
   for (const { profileId, group } of snap.profileGroups || []) out[`home group ${profileId}/${group.group_id}`] = n(group.entities);
-  out.entities = (snap.configured || []).length;
+  out.entities = entityIdsOf(snap).length;
   return out;
 }
 
