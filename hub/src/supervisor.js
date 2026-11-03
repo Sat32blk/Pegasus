@@ -17,6 +17,61 @@ export class Supervisor extends EventEmitter {
     this.store = store;
     this.log = log;
     this.procs = new Map(); // id -> { child, state, since, restarts, timer, wantRunning, lines, startedAt, lastExit }
+    this.usageNow = new Map(); // id -> { cpu (% of one core), memMB }
+    this.lastTicks = new Map(); // id -> { ticks, at }
+    this.usageTimer = setInterval(() => this.#sampleUsage(), 5000);
+    this.usageTimer.unref?.();
+  }
+
+  /** CPU and memory of each running driver, with its child processes (Linux /proc; nothing elsewhere). */
+  #sampleUsage() {
+    let stats;
+    try {
+      stats = fs
+        .readdirSync("/proc")
+        .filter((d) => /^\d+$/.test(d))
+        .map((pid) => {
+          try {
+            const raw = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+            const f = raw.slice(raw.lastIndexOf(")") + 2).split(" "); // fields from 3 (state) on
+            return { pid: Number(pid), ppid: Number(f[1]), ticks: Number(f[11]) + Number(f[12]), rssPages: Number(f[21]) };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    } catch {
+      return; // not Linux
+    }
+    const kids = new Map();
+    for (const p of stats) (kids.get(p.ppid) || kids.set(p.ppid, []).get(p.ppid)).push(p);
+    const now = Date.now();
+    for (const [id, p] of this.procs) {
+      const pid = p.child?.pid;
+      if (!pid) {
+        this.usageNow.delete(id);
+        this.lastTicks.delete(id);
+        continue;
+      }
+      let ticks = 0;
+      let pages = 0;
+      const walk = (n) => {
+        ticks += n.ticks;
+        pages += n.rssPages;
+        for (const c of kids.get(n.pid) || []) walk(c);
+      };
+      const root = stats.find((x) => x.pid === pid);
+      if (!root) continue;
+      walk(root);
+      const prev = this.lastTicks.get(id);
+      this.lastTicks.set(id, { ticks, at: now, pid });
+      const cpu = prev && prev.pid === pid && now > prev.at ? (((ticks - prev.ticks) / 100) / ((now - prev.at) / 1000)) * 100 : null;
+      this.usageNow.set(id, { cpu: cpu == null ? null : Math.max(0, Math.round(cpu * 10) / 10), memMB: Math.round((pages * 4096) / 1048576) });
+    }
+  }
+
+  usage(id) {
+    return this.usageNow.get(id) || null;
   }
 
   info(id) {
@@ -215,6 +270,7 @@ export class Supervisor extends EventEmitter {
   }
 
   async stopAll() {
+    clearInterval(this.usageTimer);
     await Promise.all([...this.procs.keys()].map((id) => this.stop(id, { quiet: true })));
   }
 }

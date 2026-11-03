@@ -4,106 +4,361 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pegasis Hub</title>
+<script>
+// apply the saved theme before anything paints (no flash of the wrong theme)
+(function () {
+  var t = "system", a = "indigo";
+  try { t = localStorage.getItem("pg-theme") || t; a = localStorage.getItem("pg-accent") || a; } catch (e) {}
+  var dark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = t === "system" ? (dark ? "dark" : "light") : t;
+  document.documentElement.dataset.accent = a;
+})();
+</script>
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--ink:#16181d;--mute:#626875;--line:#e2e4e9;--accent:#3b5bdb;--ok:#2b8a3e;--warn:#e67700;--bad:#c92a2a;--chip:#eef0f4;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root{--bg:#111317;--card:#1a1d23;--ink:#e8eaee;--mute:#9aa1ad;--line:#2b2f37;--accent:#7b93ff;--ok:#51cf66;--warn:#ffa94d;--bad:#ff6b6b;--chip:#252932}}
+:root,:root[data-theme="light"]{
+  --bg:#f3f4f7;--panel:#fff;--panel2:#f8f9fb;--ink:#151821;--mute:#646b7a;--faint:#9aa0ad;--line:#e3e6ec;
+  --ok:#23864a;--ok-soft:#e5f5ec;--warn:#b86400;--warn-soft:#fff2df;--bad:#c33030;--bad-soft:#fde8e8;--idle:#6b7280;--idle-soft:#eef0f3;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px rgba(16,24,40,.06);--logbg:#0c0e12;--logink:#cfd5df;--scrim:rgba(10,12,18,.5);
+  --in:#2f9e8f;--out:#c2731b;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115;--panel:#171a21;--panel2:#1c2029;--ink:#e7e9ee;--mute:#9aa1af;--faint:#6b7280;--line:#272c36;
+  --ok:#4cc97a;--ok-soft:#163222;--warn:#f0a548;--warn-soft:#352610;--bad:#ff7070;--bad-soft:#3a1717;--idle:#9aa1af;--idle-soft:#232731;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.3);--logbg:#0a0c10;--logink:#cfd5df;--scrim:rgba(0,0,0,.6);
+  --in:#4fd1bd;--out:#f2a65a;
+  color-scheme:dark;
+}
+:root[data-theme="midnight"]{
+  --bg:#000;--panel:#0b0b0e;--panel2:#121217;--ink:#ececf1;--mute:#8e8e9c;--faint:#5c5c68;--line:#1f1f27;
+  --ok:#3fd17a;--ok-soft:#0f2a19;--warn:#ffb347;--warn-soft:#2c1f08;--bad:#ff6b6b;--bad-soft:#2e0f0f;--idle:#8e8e9c;--idle-soft:#17171d;
+  --shadow:none;--logbg:#050507;--logink:#d2d2dc;--scrim:rgba(0,0,0,.7);
+  --in:#4fd1bd;--out:#f2a65a;
+  color-scheme:dark;
+}
+:root[data-theme="slate"]{
+  --bg:#1b2230;--panel:#232c3d;--panel2:#2a3447;--ink:#e3e8f2;--mute:#9eabc2;--faint:#6d7a92;--line:#34405a;
+  --ok:#5fd394;--ok-soft:#1d3a30;--warn:#f4b45f;--warn-soft:#3d3020;--bad:#ff8080;--bad-soft:#432528;--idle:#9eabc2;--idle-soft:#2f3a50;
+  --shadow:0 1px 2px rgba(0,0,0,.25),0 8px 24px rgba(0,0,0,.2);--logbg:#141a25;--logink:#d6deeb;--scrim:rgba(8,12,20,.6);
+  --in:#6fdcc9;--out:#f5b26b;
+  color-scheme:dark;
+}
+:root[data-theme="paper"]{
+  --bg:#f4efe6;--panel:#fffcf6;--panel2:#f9f4ea;--ink:#2a2420;--mute:#6f655a;--faint:#a3988a;--line:#e5dccd;
+  --ok:#2f7d46;--ok-soft:#e3f0e2;--warn:#a85f00;--warn-soft:#f8ead2;--bad:#b3392c;--bad-soft:#f6e1dc;--idle:#7b7064;--idle-soft:#efe8dc;
+  --shadow:0 1px 2px rgba(60,40,10,.06),0 8px 24px rgba(60,40,10,.06);--logbg:#211c17;--logink:#e9e1d3;--scrim:rgba(40,30,20,.45);
+  --in:#2a8c7e;--out:#b8681a;
+  color-scheme:light;
+}
+:root[data-theme="contrast"]{
+  --bg:#000;--panel:#000;--panel2:#111;--ink:#fff;--mute:#e0e0e0;--faint:#bdbdbd;--line:#fff;
+  --ok:#5dff8f;--ok-soft:#002a10;--warn:#ffd23f;--warn-soft:#2a2200;--bad:#ff6b6b;--bad-soft:#2a0000;--idle:#fff;--idle-soft:#1a1a1a;
+  --shadow:none;--logbg:#000;--logink:#fff;--scrim:rgba(0,0,0,.8);
+  --in:#5dffe0;--out:#ffb15d;
+  color-scheme:dark;
+}
+/* accents: [light-theme value, dark-theme value] picked by the --lum switch below */
+:root{--accent:#4c5fd5;--accent-ink:#fff;--accent-soft:#eceffd}
+:root[data-accent="indigo"]{--a1:#4c5fd5;--a2:#8597ff}
+:root[data-accent="teal"]{--a1:#0f8b7e;--a2:#3fd3c1}
+:root[data-accent="violet"]{--a1:#7a46d6;--a2:#b391ff}
+:root[data-accent="orange"]{--a1:#c4590f;--a2:#ff9d52}
+:root[data-accent="rose"]{--a1:#c4335f;--a2:#ff7aa2}
+:root[data-accent="green"]{--a1:#2d8a3e;--a2:#68d97b}
+:root[data-theme="light"],:root[data-theme="paper"]{--accent:var(--a1);--accent-ink:#fff;--accent-soft:color-mix(in srgb,var(--a1) 11%,var(--panel))}
+:root[data-theme="dark"],:root[data-theme="midnight"],:root[data-theme="slate"],:root[data-theme="contrast"]{--accent:var(--a2);--accent-ink:#0b0d12;--accent-soft:color-mix(in srgb,var(--a2) 18%,var(--panel))}
+:root{--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--r:12px}
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
-header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
-header .ver{color:var(--mute);font-size:13px}
-header .link{margin-left:auto;font-size:13px;color:var(--mute);text-align:right}
-main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
-@media (max-width:760px){.row{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
-.card h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);font-weight:600}
-.code{font:600 20px var(--mono);letter-spacing:1px;user-select:all}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
-.kv dt{color:var(--mute)}.kv dd{margin:0;font-family:var(--mono);word-break:break-all}
-input[type=text]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
-button{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}
-button:hover{border-color:var(--accent)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-button.danger{color:var(--bad)}
-button:disabled{opacity:.5;cursor:default}
-.inline{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-.inline input{flex:1;min-width:160px}
-.muted{color:var(--mute);font-size:13px}
-.list{display:flex;flex-direction:column;gap:10px}
-.intg{display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:center}
-.intg .name{font-weight:600;font-size:16px}
-.intg .meta{color:var(--mute);font-size:13px;display:flex;gap:10px;flex-wrap:wrap}
-.intg .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-@media (max-width:640px){.intg{grid-template-columns:1fr}.intg .actions{justify-content:flex-start}}
-.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);font-weight:600}
-.s-running{color:var(--ok)}.s-starting,.s-installing{color:var(--warn)}.s-crashed,.s-error{color:var(--bad)}.s-stopped{color:var(--mute)}
-.upd{color:var(--accent)}
-.empty{text-align:center;padding:30px;color:var(--mute)}
-.rlist{display:flex;flex-direction:column;gap:2px}
-.rrow{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:10px 4px;border-top:1px solid var(--line)}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* top bar */
+.top{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.top-in{max-width:1180px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.2px;white-space:nowrap}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 50%,#c86cff));display:grid;place-items:center;color:#fff;flex:none}
+.brand small{font-weight:500;color:var(--mute);font-size:12.5px;margin-left:4px}
+.remotes{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.rpill{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 8px;border:1px solid var(--line);border-radius:99px;background:var(--panel2);font-size:12.5px;white-space:nowrap}
+.rpill .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.rpill.sleep .dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.rpill.off .dot{background:var(--faint);box-shadow:0 0 0 3px var(--idle-soft)}
+.rpill .lat{font-family:var(--mono);color:var(--mute)}
+.iconbtn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;height:34px;min-width:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
+.iconbtn:hover{border-color:var(--accent)}
+.btn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 12px;font-weight:550;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--bad)}
+.btn.danger.solid{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.small{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+
+main{max-width:1180px;margin:0 auto;padding:20px 20px 60px}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;text-align:left}
+button.tile{cursor:pointer;display:block;width:100%;font:inherit;color:inherit}button.tile:hover{border-color:var(--accent)}
+.tile .k{color:var(--mute);font-size:12px}
+.tile .v{font-size:22px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v small{font-size:13px;color:var(--mute);font-weight:500}
+.tile .bar{height:5px;border-radius:9px;background:var(--idle-soft);margin-top:8px;overflow:hidden}
+.tile .bar i{display:block;height:100%;background:var(--accent);border-radius:9px}
+.tile svg.spark{display:block;width:100%;height:22px;margin-top:4px}
+
+/* cards & list */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.card+.card,#remoteSections .card{margin-top:16px}
+.listhead{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.listhead h2{margin:0;font-size:15px}
+.listhead .sub2{margin:0}
+.search{flex:1;min-width:160px;max-width:280px;margin-left:auto;display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:9px;padding:0 10px;background:var(--panel2);color:var(--mute)}
+.search input{border:0;background:transparent;color:var(--ink);font:inherit;padding:7px 0;width:100%;outline:none}
+.filters{display:flex;gap:4px;flex-wrap:wrap}
+.filters button{border:1px solid transparent;background:transparent;border-radius:99px;padding:4px 10px;font-size:12.5px;color:var(--mute)}
+.filters button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.filters .n{opacity:.7;margin-left:3px}
+table{width:100%;border-collapse:collapse}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:600;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--panel2)}
+.app{display:flex;align-items:center;gap:12px;min-width:0}
+.aicon{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;font-size:16px;font-weight:700}
+.aname{font-weight:620;font-size:14.5px}
+.asub{color:var(--mute);font-size:12px;display:flex;gap:8px;flex-wrap:wrap}
+.asub span{white-space:nowrap}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.st-running,.st-done{color:var(--ok);background:var(--ok-soft)}
+.st-starting,.st-installing,.st-updating,.st-moving{color:var(--warn);background:var(--warn-soft)}
+.st-starting::before,.st-moving::before{animation:pulse 1s infinite}
+.st-crashed,.st-error,.st-failed{color:var(--bad);background:var(--bad-soft)}
+.st-stopped,.st-idle{color:var(--idle);background:var(--idle-soft)}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.sub2{color:var(--mute);font-size:12px;margin-top:3px}
+.rem{display:flex;flex-direction:column;gap:3px;font-size:12.5px}
+.rem span{display:flex;align-items:center;gap:6px}
+.ck{color:var(--ok)}.wt{color:var(--warn)}.xx{color:var(--faint)}.bd{color:var(--bad)}
+.usage{font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
+.mini{display:inline-block;width:46px;height:4px;border-radius:9px;background:var(--idle-soft);vertical-align:middle;margin-left:6px;overflow:hidden}
+.mini i{display:block;height:100%;background:var(--accent)}
+.upd{font-size:12.5px;white-space:nowrap}
+.upd .new{color:var(--accent);font-weight:650}
+.acts{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+.menu{position:relative}
+.menu-pop{position:absolute;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow),0 10px 30px rgba(0,0,0,.15);min-width:200px;padding:5px;z-index:20;display:none}
+.menu.open .menu-pop{display:block}
+.menu-pop button{display:flex;width:100%;text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:7px;gap:10px;align-items:center;font-size:13px}
+.menu-pop button:hover{background:var(--panel2)}
+.menu-pop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.menu-pop .danger{color:var(--bad)}
+.empty{padding:44px 20px;text-align:center;color:var(--mute)}
+.empty h3{color:var(--ink);margin:8px 0 4px}
+.banner{display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:var(--r);margin-bottom:14px;border:1px solid}
+.banner.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+.banner.bad{background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.banner .btn{margin-left:auto}
+
+/* remote sections */
+.slots{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute)}
+.slotbar{display:flex;gap:3px}
+.slotbar i{width:9px;height:14px;border-radius:3px;background:var(--idle-soft);border:1px solid var(--line)}
+.slotbar i.used{background:var(--accent);border-color:var(--accent)}
+.rrow{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:11px 16px;border-top:1px solid var(--line)}
 .rrow:first-child{border-top:0}
-.rrow .why{color:var(--mute);font-size:13px}
-.mv{margin-top:6px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-.mv pre{margin:6px 0 0;font:12px/1.5 var(--mono);white-space:pre-wrap;color:var(--mute)}
-section.card+section.card,#remoteSections section{margin-top:16px}
-dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);width:min(900px,94vw);padding:0}
-dialog::backdrop{background:rgba(0,0,0,.45)}
-dialog header{position:static;border-radius:12px 12px 0 0}
-dialog .body{padding:14px 16px}
-pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;height:min(60vh,520px);overflow:auto;font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0}
-label.f{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
-textarea{width:100%;min-height:90px;font:12px var(--mono);padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.rrow .kind{font-size:12px;color:var(--mute)}
+.rgroup{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:600;padding:12px 16px 4px;border-top:1px solid var(--line)}
+.rgroup:first-child{border-top:0}
+.mv{margin-top:8px;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.mv pre{margin:6px 0 0;font:11.5px/1.5 var(--mono);white-space:pre-wrap;color:var(--mute);max-height:120px;overflow:auto}
+details.more>summary{cursor:pointer;color:var(--mute);font-size:12.5px;padding:10px 16px;border-top:1px solid var(--line);list-style:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::before{content:"▸ ";}
+details.more[open]>summary::before{content:"▾ ";}
+
+/* windows */
+.scrim{position:fixed;inset:0;background:var(--scrim);display:none;align-items:flex-start;justify-content:center;padding:6vh 14px;z-index:50;overflow:auto}
+.scrim.open{display:flex}
+.win{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);width:min(720px,100%);max-height:88vh;display:flex;flex-direction:column}
+.win.wide{width:min(980px,100%)}
+.win.narrow{width:min(480px,100%)}
+.whead{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.whead h3{margin:0;font-size:16px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whead .x{margin-left:auto;border:0;background:transparent;font-size:22px;line-height:1;color:var(--mute);width:32px;height:32px;border-radius:8px;flex:none}
+.whead .x:hover{background:var(--panel2)}
+.tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{border:0;background:transparent;padding:10px 12px;border-bottom:2px solid transparent;color:var(--mute);font-weight:550;white-space:nowrap}
+.tabs button.on{color:var(--ink);border-color:var(--accent)}
+.wbody{padding:16px 18px;overflow:auto}
+.wfoot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);flex-wrap:wrap}
+.wfoot .left{margin-right:auto;color:var(--mute);font-size:12.5px;align-self:center}
+.field{margin-bottom:14px}
+.field label{display:block;font-weight:600;font-size:13px;margin-bottom:5px}
+.field .help{color:var(--mute);font-size:12px;margin-top:4px}
+.inp{width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:9px;padding:9px 11px;font:inherit}
+.inp:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+textarea.inp{font-family:var(--mono);font-size:12.5px;min-height:96px;resize:vertical}
+.row2{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.toggle{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.toggle:last-child{border-bottom:0}
+.toggle .t{flex:1}.toggle .t b{display:block;font-size:13.5px}.toggle .t span{color:var(--mute);font-size:12.5px}
+.sw{appearance:none;width:38px;height:22px;border-radius:99px;background:var(--line);position:relative;cursor:pointer;flex:none;margin-top:2px;transition:.15s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.sw:checked{background:var(--accent)}.sw:checked::after{left:19px}
+.drop{border:2px dashed var(--line);border-radius:14px;padding:28px;text-align:center;color:var(--mute);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{color:var(--ink)}
+pre.log{margin:0;background:var(--logbg);color:var(--logink);border-radius:10px;padding:12px;font:12px/1.55 var(--mono);height:min(56vh,480px);overflow:auto;white-space:pre-wrap;word-break:break-word}
+pre.log .e{color:#ff8a8a}pre.log .h{color:#8fa2ff}pre.log .ok{color:#6fdc98}
+.logbar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.logbar .inp{max-width:240px;padding:6px 10px}
+.chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--mute);white-space:nowrap}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pairbox{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel2);min-width:0}
+.pairbox .k{font-size:12px;color:var(--mute)}
+.pairbox .v{font:650 19px var(--mono);margin-top:4px;letter-spacing:.5px;word-break:break-all;user-select:all}
+.copy{float:right;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+ol.howto{padding-left:20px;margin:14px 0 0}
+ol.howto li{margin:6px 0}
+.rtable td,.rtable th{padding:9px 8px}
+.warnbox{background:var(--bad-soft);border-radius:10px;padding:12px 14px;font-size:13px;margin:10px 0}
+.kvs{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.kvs dt{color:var(--mute)}.kvs dd{margin:0;min-width:0;word-break:break-word}
+.steps{margin:0 0 12px;padding-left:18px;color:var(--mute);font-size:13px}
+.steps li{margin:4px 0}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:99;max-width:calc(100% - 32px)}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.toast.bad{background:var(--bad);color:#fff}
+
+/* theme popover */
+.themepop{position:absolute;right:0;top:calc(100% + 6px);width:280px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow),0 12px 36px rgba(0,0,0,.2);padding:12px;z-index:30;display:none}
+.menu.open .themepop{display:block}
+.themepop h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute)}
+.themes{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:12px}
+.themes button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 8px;font-size:12.5px;text-align:left}
+.themes button.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.sample{width:22px;height:16px;border-radius:4px;flex:none;border:1px solid rgba(127,127,127,.35);display:grid;grid-template-columns:1fr 1fr;overflow:hidden}
+.accents{display:flex;gap:8px;flex-wrap:wrap}
+.accents button{width:26px;height:26px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line)}
+.accents button.on{box-shadow:0 0 0 2px var(--ink)}
+
+/* network */
+.netgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0 14px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel2);min-width:0}
+.stat .k{font-size:11.5px;color:var(--mute)}
+.stat .v{font-size:17px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font-size:12px;color:var(--mute);font-weight:500}
+.chart{width:100%;height:auto;display:block;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute);margin:6px 2px 14px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.nethead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nethead h4{margin:0;font-size:15px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-left:auto}
+.seg button{border:0;background:var(--panel2);padding:5px 10px;font-size:12.5px;color:var(--mute)}
+.seg button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.netsec+.netsec{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.tablewrap th,.tablewrap td{padding:8px 10px;font-size:12.5px}
+
+/* phone layout */
+@media (max-width:860px){
+  .tiles,.netgrid{grid-template-columns:repeat(2,1fr)}
+  .remotes{display:none}
+  .top-in{padding:10px 14px;gap:8px}
+  .brand{margin-right:auto}
+  .brand small,.iconbtn .lbl{display:none}
+  main{padding:16px 14px 50px}
+  #intgTable thead{display:none}
+  #intgTable,#intgTable tbody,#intgTable tr,#intgTable td{display:block;width:100%}
+  #intgTable tr{padding:12px 14px;border-bottom:1px solid var(--line)}
+  #intgTable tr:last-child{border-bottom:0}
+  #intgTable td{border:0;padding:4px 0}
+  #intgTable td[data-l]{display:flex;gap:8px;align-items:flex-start}
+  #intgTable td[data-l]::before{content:attr(data-l);flex:none;width:86px;color:var(--mute);font-size:12px;padding-top:2px}
+  .acts{justify-content:flex-start;margin-top:6px;flex-wrap:wrap}
+  .listhead .search{max-width:none;order:3;flex-basis:100%;margin-left:0}
+  .pair,.row2{grid-template-columns:1fr}
+  .rrow{grid-template-columns:1fr;padding:11px 14px}
+  .themepop{position:fixed;left:14px;right:14px;top:58px;width:auto}
+}
+@media (max-width:520px){
+  .netgrid{grid-template-columns:1fr}
+  .scrim{padding:10px 8px}
+  .win{max-height:calc(100vh - 20px)}
+  .menu-pop{right:auto;left:0}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>Pegasis Hub</h1><span class="ver" id="ver"></span>
-  <div class="link" id="linkState">…</div>
-</header>
-<main>
-  <div class="row">
-    <section class="card">
-      <h2>Pair a remote</h2>
-      <p class="muted" style="margin-top:0">Install <b>Pegasis Bridge</b> on the remote, start its setup and enter:</p>
-      <dl class="kv">
-        <dt>Hub address</dt><dd id="pairAddr"></dd>
-        <dt>Pairing code</dt><dd class="code" id="pairCode"></dd>
-      </dl>
-      <div class="inline"><button id="regen">New pairing code</button></div>
-    </section>
-    <section class="card">
-      <h2>Add an integration</h2>
-      <div class="muted">GitHub repository (newest release is used; add a tag or branch to pin one)</div>
-      <div class="inline">
-        <input type="text" id="gitUrl" placeholder="https://github.com/owner/uc-intg-something">
-        <input type="text" id="gitRef" placeholder="tag / branch (optional)" style="flex:.45">
-        <button class="primary" id="installGit">Install</button>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-1 5-4 6-8 1 3 3 5 6 5 2 0 3-1 4-3"/><path d="M14 4l2 3"/></svg></div>
+      <div>Pegasis Hub<small id="ver"></small></div>
+    </div>
+    <div class="remotes" id="pills"></div>
+    <button class="iconbtn" id="netBtn" title="Network statistics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Network</span></button>
+    <button class="iconbtn" id="remotesBtn" title="Remotes and pairing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M12 6v.01M10 10h4"/></svg><span class="lbl">Remotes</span></button>
+    <div class="menu" id="themeMenu">
+      <button class="iconbtn" id="themeBtn" title="Theme" aria-haspopup="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 0 18c1.7 0 2-1.4 1.2-2.4-.8-1-.4-2.6 1.1-2.6H17a4 4 0 0 0 4-4c0-5-4-9-9-9z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/></svg><span class="lbl">Theme</span></button>
+      <div class="themepop" role="dialog" aria-label="Theme">
+        <h4>Theme</h4>
+        <div class="themes" id="themes"></div>
+        <h4>Accent</h4>
+        <div class="accents" id="accents"></div>
       </div>
-      <div class="muted" style="margin-top:12px">or a custom-integration archive (.tar.gz)</div>
-      <div class="inline"><input type="file" id="archive" accept=".gz,.tgz"><button id="installArchive">Upload</button></div>
-    </section>
+    </div>
   </div>
+</header>
+
+<main>
+  <div id="banner"></div>
+  <section class="tiles" id="tiles"></section>
 
   <section class="card">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <h2 style="margin:0">Integrations</h2>
-      <button id="checkUpd" style="margin-left:auto">Check for updates</button>
+    <div class="listhead">
+      <h2>Integrations on the hub</h2>
+      <div class="filters" id="filters"></div>
+      <div class="search"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" placeholder="Search" aria-label="Search integrations"></div>
+      <button class="btn" id="checkUpd">Check for updates</button>
+      <button class="btn primary" id="addBtn">+ Add integration</button>
     </div>
-    <div class="list" id="list"><div class="empty">Loading…</div></div>
+    <div id="listWrap"><div class="empty">Loading…</div></div>
   </section>
 
   <div id="remoteSections"></div>
 </main>
 
-<dialog id="dlg">
-  <header><h1 id="dlgTitle" style="font-size:16px"></h1><button style="margin-left:auto" onclick="dlg.close()">Close</button></header>
-  <div class="body" id="dlgBody"></div>
-</dialog>
+<!-- one window, filled per use -->
+<div class="scrim" id="scrim"><div class="win" id="win" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+  <div class="whead"><span id="winIcon"></span><h3 id="winTitle"></h3><button class="x" data-close aria-label="Close">×</button></div>
+  <div id="winTabs"></div>
+  <div class="wbody" id="winBody"></div>
+  <div class="wfoot" id="winFoot" hidden></div>
+</div></div>
+
+<div class="toast" id="toast" role="status"></div>
 
 <script>
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
 async function call(method, path, body, raw) {
   const opt = { method, headers: {} };
   if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
@@ -113,29 +368,147 @@ async function call(method, path, body, raw) {
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
-const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : Math.round(s / 3600) + " h"; };
+const ago = (t) => { if (!t) return "—"; const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : s < 172800 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " d"; };
+const fmtBytes = (b) => b == null ? "—" : b < 1024 ? Math.round(b) + " B" : b < 1048576 ? (b / 1024).toFixed(b < 10240 ? 1 : 0) + " KB" : b < 1073741824 ? (b / 1048576).toFixed(1) + " MB" : (b / 1073741824).toFixed(2) + " GB";
+const fmtRate = (b) => b == null ? "—" : fmtBytes(b) + "/s";
+const fmtMs = (ms) => ms == null ? "—" : ms < 10 ? ms.toFixed(1) + " ms" : ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s";
+const fmtN = (n) => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? (n / 1000).toFixed(n < 1e4 ? 1 : 0) + "k" : (n / 1e6).toFixed(1) + "M";
 
-let items = [];
+function toast(t, bad) { const el = $("#toast"); el.textContent = t; el.classList.toggle("bad", !!bad); el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), bad ? 6000 : 2800); }
+const fail = (e) => toast(e.message || String(e), true);
+
+/* ---------------- theme ---------------- */
+const THEMES = [
+  ["system", "System", ["#f3f4f7", "#0f1115"]], ["light", "Light", ["#f3f4f7", "#fff"]], ["dark", "Dark", ["#0f1115", "#171a21"]],
+  ["midnight", "Midnight", ["#000", "#0b0b0e"]], ["slate", "Slate", ["#1b2230", "#232c3d"]], ["paper", "Paper", ["#f4efe6", "#fffcf6"]], ["contrast", "High contrast", ["#000", "#fff"]]
+];
+const ACCENTS = { indigo: "#6472e0", teal: "#1fae9e", violet: "#9363ea", orange: "#e57a2c", rose: "#e05282", green: "#45b058" };
+const mq = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const t = store.get("pg-theme", "system");
+  document.documentElement.dataset.theme = t === "system" ? (mq.matches ? "dark" : "light") : t;
+  document.documentElement.dataset.accent = store.get("pg-accent", "indigo");
+  $("#themes").innerHTML = THEMES.map(([id, name, [a, b]]) => `<button data-theme="${id}" class="${id === t ? "on" : ""}" aria-pressed="${id === t}"><span class="sample"><i style="background:${a}"></i><i style="background:${b}"></i></span>${name}</button>`).join("");
+  const ac = store.get("pg-accent", "indigo");
+  $("#accents").innerHTML = Object.entries(ACCENTS).map(([id, c]) => `<button data-accent="${id}" title="${id}" aria-label="${id}" aria-pressed="${id === ac}" class="${id === ac ? "on" : ""}" style="background:${c}"></button>`).join("");
+  if (netState.open) renderNetwork();
+}
+mq.addEventListener?.("change", applyTheme);
+$("#themeMenu").addEventListener("click", (e) => {
+  const t = e.target.closest("#themes [data-theme]"), a = e.target.closest("#accents [data-accent]");
+  if (t) { store.set("pg-theme", t.dataset.theme); applyTheme(); }
+  else if (a) { store.set("pg-accent", a.dataset.accent); applyTheme(); }
+  else if (e.target.closest("#themeBtn")) $("#themeMenu").classList.toggle("open");
+});
+
+/* ---------------- state ---------------- */
+let st = null, items = [], filter = store.get("pg-filter", "all");
+const remoteLists = {}, remoteLoaded = {};
+let net = null;
+
 async function refresh() {
   try {
-    const st = await call("GET", "/status");
-    $("ver").textContent = "v" + st.version + " · " + st.arch;
-    $("pairAddr").textContent = location.hostname + ":" + st.pairing.port;
-    $("pairCode").textContent = st.pairing.token;
-    $("linkState").innerHTML = st.remotes.length
-      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open${r.access === false ? ` · <span class="s-error">no access: rerun Bridge setup</span>` : ""} · <a href="#" data-remote-battery="${esc(r.remote)}">Battery</a> · <a href="#" data-remote-log="${esc(r.remote)}">Bridge log</a>`).join("<br>")
-      : "No remote linked";
-    items = await call("GET", "/integrations");
+    const [s, list] = await Promise.all([call("GET", "/status"), call("GET", "/integrations")]);
+    st = s; items = list;
     render();
-    remotesNow = st.remotes;
-    renderRemotes();
-  } catch (e) { $("linkState").textContent = "Hub not reachable: " + e.message; }
+  } catch (e) {
+    $("#banner").innerHTML = `<div class="banner bad"><span>⚠</span><span><b>The hub isn't answering.</b> ${esc(e.message)}</span></div>`;
+  }
+}
+async function refreshNet() { try { net = await call("GET", "/network"); renderTiles(); if (netState.open) renderNetwork(); } catch {} }
+
+/* ---------------- render: top, banner, tiles ---------------- */
+function render() {
+  $("#ver").textContent = `${st.version} · ${st.arch}`;
+  $("#pills").innerHTML = st.remotes.length
+    ? st.remotes.map((r) => `<span class="rpill ${r.standby ? "sleep" : ""}" title="${esc(r.remote)} · Bridge ${esc(r.bridge)}"><span class="dot"></span><b>${esc(shortName(r.remote))}</b><span class="lat">${r.standby ? "asleep" : fmtMs(r.rttMs)}</span></span>`).join("")
+    : `<span class="rpill off"><span class="dot"></span>No remote linked</span>`;
+  const crashed = items.filter((m) => m.status.state === "crashed");
+  const noAccess = st.remotes.filter((r) => r.access === false);
+  $("#banner").innerHTML =
+    (!st.remotes.length ? `<div class="banner warn"><span>📱</span><span><b>No remote is linked.</b> Install Pegasis Bridge on your remote so these integrations show up there.</span><button class="btn primary" data-a="pair">Pair a remote</button></div>` : "") +
+    noAccess.map((r) => `<div class="banner bad"><span>🔑</span><span><b>${esc(r.remote)}: the Bridge has no access to the remote.</b> Run the Bridge's setup again on the remote and enter the web-configurator PIN.</span></div>`).join("") +
+    crashed.map((m) => `<div class="banner warn"><span>⚠</span><span><b>${esc(m.name)} keeps crashing</b> (${m.status.restarts} restarts). Its devices are unavailable on the remotes.</span><button class="btn" data-a="logs" data-id="${esc(m.id)}">See the log</button></div>`).join("");
+  renderTiles();
+  renderList();
+  renderRemotes();
+}
+const shortName = (n) => n.replace(/\.local$/, "");
+
+function spark(values, color) {
+  const v = values.filter((x) => x != null);
+  if (v.length < 2) return "";
+  const max = Math.max(...v, 1e-9), W = 100, H = 22;
+  const pts = values.map((x, i) => x == null ? null : `${((i / (values.length - 1)) * W).toFixed(1)},${(H - 2 - (x / max) * (H - 4)).toFixed(1)}`).filter(Boolean);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function renderTiles() {
+  if (!st) return;
+  const run = items.filter((m) => m.status.state === "running").length;
+  const cpu = items.reduce((a, m) => a + (m.usage?.cpu || 0), 0), mem = items.reduce((a, m) => a + (m.usage?.memMB || 0), 0) + (st.hubMemMB || 0);
+  const live = st.remotes.filter((r) => !r.standby && r.rttMs != null);
+  const rtt = live.length ? live.reduce((a, r) => a + r.rttMs, 0) / live.length : null;
+  const nr = net?.remotes.find((r) => r.connected);
+  const hist = nr ? nr.history.slice(-60) : [];
+  const traffic = net ? net.remotes.reduce((a, r) => a + r.rate.inBps + r.rate.outBps, 0) : null;
+  $("#tiles").innerHTML = `
+    <div class="tile"><div class="k">Integrations running</div><div class="v">${run} <small>of ${items.length}</small></div><div class="bar"><i style="width:${items.length ? (run / items.length) * 100 : 0}%"></i></div></div>
+    <button class="tile" data-a="remotes"><div class="k">Remotes linked</div><div class="v">${st.remotes.length} <small>${((n) => n + (n === 1 ? " connection" : " connections"))(st.remotes.reduce((a, r) => a + r.sessions, 0))}</small></div></button>
+    <button class="tile" data-a="network"><div class="k">Link round trip</div><div class="v">${rtt != null ? fmtMs(rtt).replace(" ms", " <small>ms</small>") : st.remotes.some((r) => r.standby) ? "<small>remote asleep</small>" : "<small>—</small>"}</div>${spark(hist.map((h) => h.rtt), "var(--accent)")}</button>
+    <button class="tile" data-a="network"><div class="k">Hub usage · traffic</div><div class="v">${cpu.toFixed(1)}<small>% CPU</small> · ${mem}<small> MB</small></div><div class="sub2">${traffic == null ? "" : fmtRate(traffic) + " over the link"}</div></button>`;
 }
 
-// ---- each linked remote: its integrations, with Move to hub / Move back
-let remotesNow = [];
-const remoteLists = {};
-const remoteLoaded = {};
+/* ---------------- integrations table ---------------- */
+const STATE = { running: "Running", starting: "Starting", stopped: "Stopped", crashed: "Crashed", error: "Error" };
+const hue = (s) => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+const iconOf = (m) => { const h = hue(m.driverId || m.id); return `<span class="aicon" style="background:hsl(${h} 70% 50% / .16);color:hsl(${h} 60% 45%)" aria-hidden="true">${esc((m.name || "?").trim()[0].toUpperCase())}</span>`; };
+const needsAttn = (m) => m.status.state === "crashed" || m.status.state === "error" || (m.shownAs || []).some((r) => !r.id);
+function renderList() {
+  const counts = { all: items.length, running: items.filter((m) => m.status.state === "running").length, attn: items.filter(needsAttn).length, upd: items.filter((m) => m.latest).length };
+  $("#filters").innerHTML = [["all", "All"], ["running", "Running"], ["attn", "Needs attention"], ["upd", "Updates"]]
+    .map(([f, l]) => `<button data-f="${f}" class="${filter === f ? "on" : ""}" aria-pressed="${filter === f}">${l}<span class="n">${counts[f]}</span></button>`).join("");
+  const q = $("#q").value.trim().toLowerCase();
+  const rows = items.filter((m) => (filter === "all" || (filter === "running" && m.status.state === "running") || (filter === "attn" && needsAttn(m)) || (filter === "upd" && m.latest)) && (!q || (m.name + " " + m.driverId).toLowerCase().includes(q)));
+  const openMenu = $(".menu.open[data-row]")?.dataset.row;
+  $("#listWrap").innerHTML = !items.length
+    ? `<div class="empty"><div style="font-size:38px">🧩</div><h3>Nothing on the hub yet</h3><p>Add an integration, or move one from your remote (below). It shows up on the remote as if it were installed there.</p><button class="btn primary" data-a="add">+ Add integration</button></div>`
+    : !rows.length ? `<div class="empty">No integrations match.</div>`
+    : `<table id="intgTable"><thead><tr><th>Integration</th><th>Status</th><th>On remotes</th><th>Usage</th><th>Updates</th><th><span class="sr">Actions</span></th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table>`;
+  if (openMenu) $(`.menu[data-row="${CSS.escape(openMenu)}"]`)?.classList.add("open");
+}
+function row(m) {
+  const s = m.status.state, running = s === "running" || s === "starting";
+  const src = m.source?.type === "git" ? m.source.url.replace(/^https:\/\/github.com\//, "").replace(/\.git$/, "") + (m.source.ref ? " @ " + m.source.ref : "") : m.source?.filename || "uploaded";
+  const sub = s === "crashed" ? `${m.status.restarts} restarts · <a href="#" data-a="logs" data-id="${esc(m.id)}">see why</a>` : `for ${ago(m.status.since)}${m.status.restarts ? ` · ${m.status.restarts} restarts` : ""}`;
+  const rem = !(m.shownAs || []).length ? `<span class="xx">○ no remote linked</span>` : m.shownAs.map((r) => r.id
+    ? `<span title="${esc(r.id)}"><span class="ck">●</span>${esc(shortName(r.remote))}${r.note ? ` · <span class="sub2" style="margin:0">${esc(r.note)}</span>` : ""}</span>`
+    : `<span title="${esc(r.problem)}"><span class="wt">●</span>${esc(shortName(r.remote))} · ${esc(r.problem)}</span>`).join("");
+  const u = m.usage;
+  const usage = running && u ? `${u.cpu == null ? "…" : u.cpu.toFixed(1) + "% CPU"}<span class="mini"><i style="width:${Math.min(100, (u.cpu || 0) * 10)}%"></i></span><div class="sub2">${u.memMB} MB</div>` : `<span class="xx">—</span>`;
+  const upd = m.latest ? `<span class="new">${esc(m.latest)} available</span><div class="sub2"><a href="#" data-a="update" data-id="${esc(m.id)}">Update</a></div>` : m.source?.type === "git" ? `<span class="xx">Up to date</span>` : `<span class="xx">Upload a new archive</span>`;
+  return `<tr>
+    <td><div class="app">${iconOf(m)}<div style="min-width:0"><div class="aname">${esc(m.name)}</div>
+      <div class="asub"><span>${esc(m.version)}</span><span>${esc(m.runtime === "python" ? "Python" : m.runtime === "node" ? "Node.js" : m.runtime)}</span><span title="${esc(src)}">${esc(src.length > 40 ? src.slice(0, 38) + "…" : src)}</span></div></div></div></td>
+    <td data-l="Status"><div><span class="status st-${esc(s)}">${STATE[s] || esc(s)}</span><div class="sub2">${sub}</div></div></td>
+    <td data-l="On remotes"><div class="rem">${rem}</div></td>
+    <td data-l="Usage"><div class="usage">${usage}</div></td>
+    <td data-l="Updates"><div class="upd">${upd}</div></td>
+    <td><div class="acts">
+      ${running ? `<button class="btn" data-a="stop" data-id="${esc(m.id)}">Stop</button>` : `<button class="btn" data-a="start" data-id="${esc(m.id)}">Start</button>`}
+      <button class="btn" data-a="logs" data-id="${esc(m.id)}">Logs</button>
+      <div class="menu" data-row="${esc(m.id)}"><button class="btn" data-a="menu" aria-label="More for ${esc(m.name)}" aria-haspopup="true">⋯</button>
+        <div class="menu-pop">
+          <button data-a="restart" data-id="${esc(m.id)}">↻ Restart</button>
+          ${m.source?.type === "git" ? `<button data-a="update" data-id="${esc(m.id)}">⬆ ${m.latest ? "Update to " + esc(m.latest) : "Reinstall"}</button>` : ""}
+          <button data-a="settings" data-id="${esc(m.id)}">⚙ Settings</button>
+          <button data-a="network" data-id="${esc(m.id)}">📶 Network statistics</button>
+          <hr><button class="danger" data-a="remove" data-id="${esc(m.id)}">🗑 Remove</button>
+        </div></div>
+    </div></td></tr>`;
+}
+
+/* ---------------- each linked remote: what's on it, with Move ---------------- */
+const TYPE = { CUSTOM: "installed on the remote", EXTERNAL: "external", LOCAL: "built into the remote" };
 async function loadRemote(name, force, every = 20000) {
   if (!force && remoteLoaded[name] && Date.now() - remoteLoaded[name] < every) return;
   remoteLoaded[name] = Date.now();
@@ -143,10 +516,10 @@ async function loadRemote(name, force, every = 20000) {
   catch (e) { remoteLists[name] = { error: e.message }; }
   renderRemotes();
 }
-const TYPE = { CUSTOM: "installed on the remote", EXTERNAL: "external", LOCAL: "built in" };
 function renderRemotes() {
-  const el = $("remoteSections");
-  el.innerHTML = remotesNow.map((r) => {
+  if (!st) return;
+  const openDetails = new Set($$("#remoteSections details[open]").map((d) => d.dataset.remote));
+  $("#remoteSections").innerHTML = st.remotes.map((r) => {
     const moves = r.moves || {};
     const busy = Object.values(moves).some((m) => m.status === "running" || Date.now() - m.updated < 30000);
     loadRemote(r.remote, false, busy ? 3000 : 20000);
@@ -154,236 +527,407 @@ function renderRemotes() {
     const fromHub = new Set(items.flatMap((m) => (m.shownAs || []).filter((x) => x.remote === r.remote && x.id).map((x) => x.id)));
     const standIns = new Set(Object.entries(moves).filter(([, m]) => m.dir === "toHub" && m.status === "done" && m.log.some((l) => /slot is kept/.test(l))).map(([id]) => id));
     const used = list && !list.error ? list.filter((i) => i.type === "CUSTOM").length : null;
-    const rows = !list ? '<div class="muted">Loading…</div>' : list.error ? `<div class="s-error">${esc(list.error)}</div>` : list
-      .filter((i) => i.type !== "LOCAL" || i.instance)
-      .sort((a, b) => (a.type === "CUSTOM" ? 0 : 1) - (b.type === "CUSTOM" ? 0 : 1) || a.name.localeCompare(b.name))
-      .map((i) => {
-        const mv = moves[i.driver_id];
-        const onHub = fromHub.has(i.driver_id) || standIns.has(i.driver_id);
-        let action = "";
-        if (mv?.status === "running") action = `<span class="chip s-starting">moving · ${esc(mv.step)}</span>`;
-        else if (mv?.status === "failed") action = `<button data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Retry</button>`;
-        else if (onHub) action = `<button data-mv-back="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Move back to remote</button>`;
-        else if (i.movable) action = `<button class="primary" data-mv-hub="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move to hub</button>`;
-        const kind = onHub ? (standIns.has(i.driver_id) ? "runs on the hub (through its stand-in)" : "runs on the hub") : TYPE[i.type] || i.type;
-        const why = !onHub && !i.movable && i.why ? ` · ${esc(i.why)}` : "";
-        const progress = mv && (mv.status !== "done" || Date.now() - mv.updated < 120000)
-          ? `<div class="mv"><b class="${mv.status === "failed" ? "s-error" : mv.status === "done" ? "s-running" : "s-starting"}">${mv.status === "failed" ? "Stopped" : mv.status === "done" ? "Done" : "Moving"}</b> ${mv.dir === "toHub" ? "to the hub" : "back to the remote"}${mv.error ? `: ${esc(mv.error)}` : ""}<pre>${esc(mv.log.slice(-6).join("\n"))}</pre></div>` : "";
-        return `<div class="rrow"><div><b>${esc(i.name)}</b> <span class="muted">${esc(i.version)}</span><div class="why">${esc(kind)}${why}</div>${progress}</div><div>${action}</div></div>`;
-      }).join("");
-    return `<section class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">On ${esc(r.remote)}</h2>
-      <span class="muted">${used == null ? "" : `${used} of 10 install slots used`}</span>
-      <button style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div><div class="rlist">${rows}</div></section>`;
+    const one = (i) => {
+      const mv = moves[i.driver_id];
+      const onHub = fromHub.has(i.driver_id) || standIns.has(i.driver_id);
+      let action = "";
+      if (mv?.status === "running") action = `<span class="status st-moving">moving · ${esc(mv.step)}</span>`;
+      else if (mv?.status === "failed") action = `<button class="btn" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Retry</button>`;
+      else if (onHub) action = `<button class="btn" data-mv-back="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move back to remote</button>`;
+      else if (i.movable) action = `<button class="btn primary" data-mv-hub="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move to hub</button>`;
+      const kind = onHub ? (standIns.has(i.driver_id) ? "runs on the hub, through a stand-in" : "runs on the hub") : TYPE[i.type] || i.type;
+      const why = !onHub && !i.movable && i.why && i.type === "CUSTOM" ? ` · ${esc(i.why)}` : "";
+      const progress = mv && (mv.status !== "done" || Date.now() - mv.updated < 120000)
+        ? `<div class="mv"><span class="status st-${mv.status === "failed" ? "failed" : mv.status === "done" ? "done" : "moving"}">${mv.status === "failed" ? "Stopped" : mv.status === "done" ? "Done" : "Moving"}</span> ${mv.dir === "toHub" ? "to the hub" : "back to the remote"}${mv.error ? `: ${esc(mv.error)}` : ""}<pre>${esc(mv.log.slice(-6).join("\n"))}</pre></div>` : "";
+      return `<div class="rrow"><div><b>${esc(i.name)}</b> <span class="sub2" style="display:inline">${esc(i.version)}</span><div class="kind">${onHub ? '<span class="ck">●</span> ' : ""}${esc(kind)}${why}</div>${progress}</div><div>${action}</div></div>`;
+    };
+    let rows;
+    if (!list) rows = '<div class="empty" style="padding:20px">Loading…</div>';
+    else if (list.error) rows = `<div class="rrow"><div class="bd">${esc(list.error)}</div></div>`;
+    else {
+      const byName = (a, b) => a.name.localeCompare(b.name);
+      const installed = list.filter((i) => i.type === "CUSTOM").sort(byName);
+      const hub = list.filter((i) => i.type !== "CUSTOM" && (fromHub.has(i.driver_id) || moves[i.driver_id])).sort(byName);
+      const rest = list.filter((i) => i.type !== "CUSTOM" && !hub.includes(i) && (i.type !== "LOCAL" || i.instance)).sort(byName);
+      rows = (installed.length ? `<div class="rgroup">Installed on the remote</div>${installed.map(one).join("")}` : "")
+        + (hub.length ? `<div class="rgroup">Running on the hub</div>${hub.map(one).join("")}` : "")
+        + (rest.length ? `<details class="more" data-remote="${esc(r.remote)}" ${openDetails.has(r.remote) ? "open" : ""}><summary>${rest.length} built-in and other integrations (they don't use install slots)</summary>${rest.map(one).join("")}</details>` : "");
+    }
+    return `<section class="card"><div class="listhead"><h2>On ${esc(shortName(r.remote))}</h2>
+      ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used</span>`}
+      <button class="btn" style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div>${rows}</section>`;
   }).join("");
 }
-$("remoteSections").addEventListener("click", async (ev) => {
+$("#remoteSections").addEventListener("click", async (ev) => {
   const b = ev.target.closest("button"); if (!b) return;
   const remote = b.dataset.remote || b.dataset.reload;
   try {
     if (b.dataset.reload) return loadRemote(remote, true);
     if (b.dataset.mvHub) return confirmMove(remote, b.dataset.mvHub, b.dataset.name);
-    if (b.dataset.mvBack) {
-      if (!confirm(`Move ${b.dataset.mvBack} back onto the remote?\n\nIt needs a free install slot. Its buttons disappear for a few seconds while it's reinstalled, then everything is put back.`)) return;
-      await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvBack, to: "remote" });
-    }
-    if (b.dataset.mvRetry) await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvRetry, retry: true });
+    if (b.dataset.mvBack) return confirmMoveBack(remote, b.dataset.mvBack, b.dataset.name);
+    if (b.dataset.mvRetry) { b.disabled = true; await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvRetry, retry: true }); toast("Retrying the move"); }
     setTimeout(() => loadRemote(remote, true), 1500);
     refresh();
-  } catch (e) { alert(e.message); }
+  } catch (e) { fail(e); }
 });
-function confirmMove(remote, driverId, name) {
-  $("dlgTitle").textContent = `Move ${name} to the hub`;
-  $("dlgBody").innerHTML = `
-    <p style="margin-top:0">The hub installs the same version, takes over its settings and runs it. It stays under Integrations on <b>${esc(remote)}</b> with the same ID, devices and entities.</p>
-    <ol class="muted" style="padding-left:18px">
-      <li>Every place it's used is saved first: activities (entities, sequences, buttons, pages), macros and the home screen.</li>
-      <li>To free its install slot it's removed from the remote and added back from the hub. <b>Its buttons are missing for a few seconds</b>, then everything saved is put back and checked.</li>
-      <li>If anything doesn't come back, the move stops, keeps what it saved, and offers Retry.</li>
-    </ol>
-    <p><b>Make a backup in the web configurator first</b> (Settings → Backup), at least before your first move.</p>
-    <label style="display:block;margin:10px 0"><input type="checkbox" id="keepSlot"> Keep its install slot instead (a small stand-in stays on the remote; nothing is removed)</label>
-    <div class="inline"><button class="primary" id="goMove">Move to hub</button><button onclick="dlg.close()">Cancel</button></div>`;
-  dlg.showModal();
-  $("goMove").onclick = async () => {
-    try {
-      await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId, keepSlot: $("keepSlot").checked });
-      dlg.close();
-      setTimeout(() => loadRemote(remote, true), 1500);
-    } catch (e) { alert(e.message); }
-  };
-}
 
-function render() {
-  const el = $("list");
-  if (!items.length) { el.innerHTML = '<div class="empty">Nothing installed yet. Add an integration above: it shows up on the remote by itself.</div>'; return; }
-  el.innerHTML = items.map((m) => {
-    const s = m.status.state, running = s === "running" || s === "starting";
-    const src = m.source?.type === "git" ? `${esc(m.source.url.replace(/^https:\/\/github.com\//, "").replace(/\.git$/, ""))}${m.source.ref ? " @ " + esc(m.source.ref) : ""}` : esc(m.source?.filename || m.source?.path || "");
-    return `<div class="card intg">
-      <div>
-        <div class="name">${esc(m.name)} <span class="chip s-${s}">${s}</span> ${m.latest ? `<span class="chip upd">${esc(m.latest)} available</span>` : ""}</div>
-        <div class="meta"><span>${esc(m.version)}</span><span>${esc(m.runtime)}</span><span>driver <code>${esc(m.driverId)}</code></span><span>${src}</span>${m.status.restarts ? `<span>${m.status.restarts} restarts</span>` : ""}<span>${s} ${ago(m.status.since || Date.now())}</span></div>
-        ${(m.shownAs || []).map((r) => r.id
-          ? `<div class="meta"><span class="s-running">✓ on ${esc(r.remote)} as <code>${esc(r.id)}</code></span>${r.note ? `<span>${esc(r.note)}</span>` : ""}</div>`
-          : `<div class="meta"><span class="s-error">✗ not on ${esc(r.remote)}: ${esc(r.problem)}</span></div>`).join("")}
-      </div>
-      <div class="actions">
-        ${running ? `<button data-a="stop" data-id="${m.id}">Stop</button>` : `<button data-a="start" data-id="${m.id}">Start</button>`}
-        <button data-a="restart" data-id="${m.id}">Restart</button>
-        ${m.source?.type === "git" ? `<button data-a="update" data-id="${m.id}">${m.latest ? "Update" : "Reinstall"}</button>` : ""}
-        <button data-a="logs" data-id="${m.id}">Logs</button>
-        <button data-a="settings" data-id="${m.id}">Settings</button>
-        <button data-a="remove" data-id="${m.id}" class="danger">Remove</button>
-      </div></div>`;
-  }).join("");
+/* ---------------- window ---------------- */
+const win = { kind: null, timer: null, tab: null };
+function openWin({ kind, title, icon = "", size = "", tabs = null, tab = null, body = "", foot = "" }) {
+  clearInterval(win.timer);
+  Object.assign(win, { kind, tab });
+  $("#win").className = "win " + size;
+  $("#winTitle").textContent = title;
+  $("#winIcon").innerHTML = icon;
+  $("#winTabs").innerHTML = tabs ? `<div class="tabs" role="tablist">${tabs.map(([id, l]) => `<button role="tab" data-tab="${id}" class="${id === tab ? "on" : ""}" aria-selected="${id === tab}">${l}</button>`).join("")}</div>` : "";
+  $("#winBody").innerHTML = body;
+  $("#winFoot").innerHTML = foot;
+  $("#winFoot").hidden = !foot;
+  if (!$("#scrim").classList.contains("open")) { $("#scrim").classList.add("open"); win.lastFocus = document.activeElement; setTimeout(() => $("#win .x").focus(), 0); }
 }
-
-$("list").addEventListener("click", async (ev) => {
-  const b = ev.target.closest("button[data-a]"); if (!b) return;
-  const id = b.dataset.id, a = b.dataset.a, m = items.find((x) => x.id === id);
-  try {
-    if (a === "logs") return showLogs(m);
-    if (a === "settings") return showSettings(m);
-    if (a === "remove") {
-      if (!confirm(`Remove ${m.name}? It is also removed from every linked remote, with its devices and entities.`)) return;
-      await call("DELETE", "/integrations/" + id);
-    } else if (a === "update") { const j = await call("POST", `/integrations/${id}/update`); return followJob(j.job, "Updating " + m.name); }
-    else { b.disabled = true; await call("POST", `/integrations/${id}/${a}`); }
-  } catch (e) { alert(e.message); }
+function closeWin() {
+  clearInterval(win.timer); win.kind = null; netState.open = false;
+  $("#scrim").classList.remove("open");
+  win.lastFocus?.focus?.();
   refresh();
+}
+$("#scrim").addEventListener("click", (e) => { if (e.target.id === "scrim" || e.target.closest("[data-close]")) closeWin(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if ($(".menu.open")) return $$(".menu.open").forEach((m) => m.classList.remove("open"));
+  if (win.kind) closeWin();
 });
 
-$("linkState").addEventListener("click", async (ev) => {
-  const b = ev.target.closest("[data-remote-battery]");
-  if (b) { ev.preventDefault(); return showBattery(b.dataset.remoteBattery, 7); }
-  const a = ev.target.closest("[data-remote-log]"); if (!a) return;
-  ev.preventDefault();
-  const remote = a.dataset.remoteLog;
-  $("dlgTitle").textContent = "Pegasis Bridge on " + remote;
-  $("dlgBody").innerHTML = '<pre class="log" id="logPre"></pre>';
-  dlg.showModal();
-  const load = async () => {
-    const pre = $("logPre"); if (!pre) return;
-    const j = await call("GET", "/remotes/" + encodeURIComponent(remote) + "/log").catch((e) => ({ lines: [e.message] }));
-    pre.textContent = j.lines.length ? j.lines.join("\n") : "(nothing yet: Bridge 0.2.1 or newer sends its log here)";
-    pre.scrollTop = pre.scrollHeight;
+/* ---------------- actions ---------------- */
+document.addEventListener("click", async (e) => {
+  // composedPath: the clicked element may have been redrawn (theme buttons) and no longer be in the page
+  const inMenu = e.composedPath().find((el) => el.classList?.contains("menu"));
+  $$(".menu.open").forEach((m) => m !== inMenu && m.classList.remove("open"));
+  const f = e.target.closest("#filters [data-f]");
+  if (f) { filter = f.dataset.f; store.set("pg-filter", filter); return renderList(); }
+  const a = e.target.closest("[data-a]"); if (!a) return;
+  e.preventDefault();
+  const id = a.dataset.id, m = items.find((x) => x.id === id);
+  try {
+    switch (a.dataset.a) {
+      case "menu": { const mm = a.closest(".menu"); const was = mm.classList.contains("open"); $$(".menu.open").forEach((x) => x.classList.remove("open")); mm.classList.toggle("open", !was); return; }
+      case "add": return showAdd("git");
+      case "pair": return showRemotes("pair");
+      case "remotes": return showRemotes("linked");
+      case "network": return showNetwork(id || null);
+      case "logs": return showLogs(m);
+      case "settings": return showSettings(m, "general");
+      case "remove": return confirmRemove(m);
+      case "update": { const j = await call("POST", `/integrations/${id}/update`); return followJob(j.job, (m.latest ? "Updating " : "Reinstalling ") + m.name); }
+      case "start": case "stop": case "restart":
+        a.disabled = true;
+        await call("POST", `/integrations/${id}/${a.dataset.a}`);
+        toast(a.dataset.a === "stop" ? `${m.name} stopped. It stays on the remotes and shows as unavailable.` : a.dataset.a === "start" ? `Starting ${m.name}` : `Restarting ${m.name}`);
+        return refresh();
+    }
+  } catch (err) { fail(err); refresh(); }
+});
+$("#addBtn").onclick = () => showAdd("git");
+$("#remotesBtn").onclick = () => showRemotes("linked");
+$("#netBtn").onclick = () => showNetwork(null);
+$("#q").oninput = renderList;
+$("#checkUpd").onclick = async (e) => {
+  e.target.disabled = true;
+  try { items = await call("POST", "/integrations/check-updates"); const n = items.filter((m) => m.latest).length; toast(n ? `${n} update${n > 1 ? "s" : ""} available` : "Everything from GitHub is up to date"); render(); }
+  catch (err) { fail(err); } finally { e.target.disabled = false; }
+};
+
+/* add */
+function showAdd(tab) {
+  openWin({ kind: "add", title: "Add an integration", size: "wide", tabs: [["git", "From GitHub"], ["upload", "Upload archive"]], tab,
+    body: tab === "git" ? `
+      <div class="row2">
+        <div class="field"><label for="gitUrl">Repository</label><input class="inp" id="gitUrl" placeholder="https://github.com/owner/uc-intg-something" autocomplete="off"><div class="help">A GitHub link to the integration's source code.</div></div>
+        <div class="field"><label for="gitRef">Version</label><input class="inp" id="gitRef" placeholder="newest release"><div class="help">Empty follows new releases. A tag or branch pins one.</div></div>
+      </div>
+      <p class="sub2">The hub reads how its author runs it (Dockerfile, package entry point or driver.py), installs its dependencies and starts it. It then appears on every linked remote under Integrations.</p>`
+    : `<label class="drop" id="drop"><input type="file" id="archive" accept=".gz,.tgz" hidden><div style="font-size:28px">⬆</div><b>Drop a .tar.gz here</b> or choose a file<div class="sub2" id="dropName">The same archive you would upload to the remote.</div></label>
+       <div class="banner warn" style="margin:14px 0 0"><span>⚠</span><span>Archives with a program built only for the remote's processor (aarch64) can't run on this server${st ? ` (${esc(st.arch)})` : ""}. Install from the GitHub source instead.</span></div>`,
+    foot: `<span class="left">It appears on every linked remote by itself.</span><button class="btn" data-close>Cancel</button><button class="btn primary" id="doInstall">Install</button>` });
+  if (tab === "git") setTimeout(() => $("#gitUrl").focus(), 0);
+  else {
+    const drop = $("#drop"), inp = $("#archive");
+    inp.onchange = () => ($("#dropName").textContent = inp.files[0]?.name || "");
+    drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+    drop.ondragleave = () => drop.classList.remove("over");
+    drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) { inp.files = e.dataTransfer.files; inp.onchange(); } };
+  }
+  $("#doInstall").onclick = async () => {
+    try {
+      if (tab === "git") {
+        const url = $("#gitUrl").value.trim(); if (!url) return $("#gitUrl").focus();
+        const j = await call("POST", "/integrations", { url, ref: $("#gitRef").value.trim() });
+        followJob(j.job, "Installing " + url.replace(/^https:\/\/github.com\//, ""));
+      } else {
+        const f = $("#archive").files[0]; if (!f) return toast("Choose an archive first", true);
+        const j = await call("POST", "/integrations/upload?name=" + encodeURIComponent(f.name), undefined, f);
+        followJob(j.job, "Installing " + f.name);
+      }
+    } catch (err) { fail(err); }
   };
-  load(); clearInterval(logTimer); logTimer = setInterval(load, 2000);
-});
+}
 
-// Battery: level over time (asleep stretches shaded, charging marked) and drain figures.
+function followJob(jobId, title) {
+  openWin({ kind: "job", title, body: '<pre class="log" id="jobPre" style="height:min(50vh,380px)"></pre>', foot: `<span class="left" id="jobState">Working… you can close this, it keeps going.</span><button class="btn" data-close>Close</button>` });
+  const tick = async () => {
+    const j = await call("GET", "/jobs/" + jobId).catch(() => null); if (!j || win.kind !== "job") return;
+    const pre = $("#jobPre");
+    pre.innerHTML = j.lines.map((l) => `<span class="${/^(FAILED|ERROR)|error:/i.test(l) ? "e" : /^\$ |^entry point|^runtime/.test(l) ? "h" : /^done/.test(l) ? "ok" : ""}">${esc(l)}</span>`).join("\n");
+    pre.scrollTop = 1e9;
+    if (j.state !== "running") {
+      clearInterval(win.timer);
+      $("#jobState").innerHTML = j.state === "done" ? `<b class="ck">Done.</b> Open it on the remote under Integrations to set it up.` : `<b class="bd">Failed:</b> ${esc(j.error)}`;
+      refresh();
+    }
+  };
+  tick(); win.timer = setInterval(tick, 700);
+}
+
+/* logs */
+function showLogs(m, source) {
+  const isBridge = !!source;
+  const title = isBridge ? `Pegasis Bridge on ${shortName(source)}` : `${m.name} — log`;
+  openWin({ kind: "logs", title, icon: isBridge ? "" : iconOf(m), size: "wide",
+    body: `<div class="logbar"><input class="inp" id="logQ" placeholder="Filter" aria-label="Filter the log"><label class="chk"><input type="checkbox" id="logErr"> Problems only</label><label class="chk"><input type="checkbox" id="logFollow" checked> Follow</label><button class="btn small" id="logDl" style="margin-left:auto">Download</button></div><pre class="log" id="logPre"></pre>` });
+  let lines = [];
+  const draw = () => {
+    const q = $("#logQ").value.toLowerCase(), errOnly = $("#logErr").checked, pre = $("#logPre");
+    const shown = lines.filter((l) => (!q || l.toLowerCase().includes(q)) && (!errOnly || /error|exception|traceback|failed|warn|crash|exited|stopped at/i.test(l)));
+    pre.innerHTML = shown.length ? shown.map((l) => `<span class="${/error|exception|traceback|failed|STOPPED/i.test(l) ? "e" : /\[hub\]|^.{0,25}move /.test(l) ? "h" : ""}">${esc(l)}</span>`).join("\n") : `<span class="h">${lines.length ? "Nothing matches." : isBridge ? "Nothing yet (Bridge 0.2.1 or newer sends its log here)." : "Nothing logged yet."}</span>`;
+    if ($("#logFollow").checked) pre.scrollTop = 1e9;
+  };
+  const load = async () => {
+    if (win.kind !== "logs") return;
+    const j = await call("GET", isBridge ? `/remotes/${encodeURIComponent(source)}/log` : `/integrations/${m.id}/logs`).catch((e) => ({ lines: [e.message] }));
+    lines = j.lines || []; draw();
+  };
+  $("#logQ").oninput = draw; $("#logErr").onchange = draw;
+  $("#logDl").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain" })); a.download = `${isBridge ? "pegasis-bridge" : m.id}-log.txt`; a.click(); };
+  load(); win.timer = setInterval(load, 1500);
+}
+
+/* settings */
+function showSettings(m, tab) {
+  const env = Object.entries(m.env || {}).map(([k, v]) => k + "=" + v).join("\n");
+  const src = m.source?.type === "git" ? `<a href="${esc(m.source.url)}" target="_blank" rel="noopener">${esc(m.source.url.replace(/^https:\/\/github.com\//, ""))}</a>${m.source.ref ? " @ " + esc(m.source.ref) : ""}` : esc(m.source?.filename || "uploaded archive");
+  openWin({ kind: "settings", title: m.name, icon: iconOf(m), tabs: [["general", "General"], ["run", "Run"], ["about", "About"]], tab,
+    body: `
+      <div data-pane="general" ${tab !== "general" ? "hidden" : ""}>
+        <div class="toggle"><div class="t"><b>Start with the hub</b><span>Starts when the container starts. Crashes are always restarted, waiting a little longer each time (up to a minute).</span></div><input type="checkbox" class="sw" id="optAuto" ${m.autostart ? "checked" : ""} aria-label="Start with the hub"></div>
+        <dl class="kvs" style="margin-top:12px">${(m.shownAs || []).map((r) => `<dt>${esc(shortName(r.remote))}</dt><dd>${r.id ? `<span class="ck">●</span> shown as <code>${esc(r.id)}</code>` : `<span class="wt">●</span> ${esc(r.problem)}`}</dd>`).join("") || "<dt>Remotes</dt><dd>none linked</dd>"}</dl>
+      </div>
+      <div data-pane="run" ${tab !== "run" ? "hidden" : ""}>
+        <div class="field"><label for="optCmd">Start command</label><input class="inp mono" id="optCmd" value="${esc(m.commandOverride ? m.commandOverride.join(" ") : "")}" placeholder="${esc(m.detectedCommand.join(" "))}"><div class="help">Empty uses the detected command, run in <code>${esc(m.cwd || ".")}</code>.</div></div>
+        <div class="field"><label for="optEnv">Environment variables</label><textarea class="inp" id="optEnv" placeholder="NAME=value, one per line">${esc(env)}</textarea></div>
+        <dl class="kvs"><dt>Internal port</dt><dd><code>127.0.0.1:${m.port}</code> (inside the container)</dd><dt>Settings folder</dt><dd><code>integrations/${esc(m.id)}/config</code>, kept across updates</dd></dl>
+      </div>
+      <div data-pane="about" ${tab !== "about" ? "hidden" : ""}>
+        <dl class="kvs">
+          <dt>Version</dt><dd>${esc(m.version)}${m.latest ? ` · <b class="upd">${esc(m.latest)} available</b>` : ""}</dd>
+          <dt>Driver ID</dt><dd><code>${esc(m.driverId)}</code></dd>
+          <dt>Source</dt><dd>${src}</dd>
+          <dt>Developer</dt><dd>${esc(m.developer || "—")}</dd>
+          <dt>Runtime</dt><dd>${esc(m.runtime === "python" ? "Python" : m.runtime === "node" ? "Node.js" : m.runtime)}</dd>
+          <dt>Installed</dt><dd>${m.installedAt ? new Date(m.installedAt).toLocaleString() : "—"}${m.updatedAt && m.updatedAt !== m.installedAt ? ` · updated ${new Date(m.updatedAt).toLocaleString()}` : ""}</dd>
+          ${m.homePage ? `<dt>Home page</dt><dd><a href="${esc(m.homePage)}" target="_blank" rel="noopener">${esc(m.homePage)}</a></dd>` : ""}
+        </dl>
+      </div>`,
+    foot: `<button class="btn" data-close>Cancel</button><button class="btn primary" id="optSave">Save and restart</button>` });
+  $("#winTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (!b) return; $$("#winTabs [data-tab]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); }); $$("#winBody [data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== b.dataset.tab)); };
+  $("#optSave").onclick = async () => {
+    const envObj = Object.fromEntries($("#optEnv").value.split("\n").map((l) => l.trim()).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1)]));
+    try {
+      await call("PATCH", "/integrations/" + m.id, { autostart: $("#optAuto").checked, command: $("#optCmd").value.trim(), env: envObj });
+      await call("POST", `/integrations/${m.id}/restart`);
+      toast(`Saved. ${m.name} is restarting.`); closeWin();
+    } catch (e) { fail(e); }
+  };
+}
+
+function confirmRemove(m) {
+  const on = (m.shownAs || []).filter((r) => r.id).map((r) => shortName(r.remote));
+  openWin({ kind: "remove", title: `Remove ${m.name}?`, size: "narrow",
+    body: `<p style="margin-top:0">This removes it from the hub${on.length ? ` <b>and from ${on.map(esc).join(", ")}</b>` : ""}.</p>${on.length ? `<div class="warnbox">On the remote, its devices and entities are deleted, along with the buttons and widgets that use them in activities. To keep them, use <b>Move back to remote</b> instead.</div>` : ""}`,
+    foot: `<button class="btn" data-close>Cancel</button><button class="btn danger solid" id="rmGo">Remove</button>` });
+  $("#rmGo").onclick = async () => { try { await call("DELETE", "/integrations/" + m.id); toast(`${m.name} removed`); closeWin(); } catch (e) { fail(e); } };
+}
+
+function confirmMove(remote, driverId, name) {
+  openWin({ kind: "move", title: `Move ${name} to the hub`,
+    body: `<p style="margin-top:0">The hub installs the same version, takes over its settings and runs it. It stays under Integrations on <b>${esc(shortName(remote))}</b> with the same ID, devices and entities.</p>
+      <ol class="steps"><li>Every place it's used is saved first: activities (entities, sequences, buttons, pages), macros and the home screen.</li>
+      <li>To free its install slot it's removed from the remote and added back from the hub. <b>Its buttons are missing for a few seconds</b>, then everything saved is put back and checked.</li>
+      <li>If anything doesn't come back, the move stops, keeps what it saved, and offers Retry.</li></ol>
+      <div class="banner warn" style="margin:0 0 6px"><span>💾</span><span><b>Make a backup in the web configurator first</b> (Settings → Backup).</span></div>
+      <div class="toggle"><div class="t"><b>Keep its install slot instead</b><span>A small stand-in stays on the remote and passes its traffic to the hub. Nothing is removed, but no slot is freed.</span></div><input type="checkbox" class="sw" id="keepSlot" aria-label="Keep its install slot"></div>`,
+    foot: `<button class="btn" data-close>Cancel</button><button class="btn primary" id="goMove">Move to hub</button>` });
+  $("#goMove").onclick = async () => {
+    try { await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId, keepSlot: $("#keepSlot").checked }); toast(`Moving ${name} to the hub`); closeWin(); setTimeout(() => loadRemote(remote, true), 1500); }
+    catch (e) { fail(e); }
+  };
+}
+function confirmMoveBack(remote, driverId, name) {
+  openWin({ kind: "move", title: `Move ${name} back to the remote`, size: "narrow",
+    body: `<p style="margin-top:0">It's installed on <b>${esc(shortName(remote))}</b> again from its GitHub release, with its settings. It needs a <b>free install slot</b>.</p><p class="sub2">Its buttons disappear for a few seconds while it's reinstalled, then everything is put back and checked.</p>`,
+    foot: `<button class="btn" data-close>Cancel</button><button class="btn primary" id="goBack">Move back</button>` });
+  $("#goBack").onclick = async () => {
+    try { await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId, to: "remote" }); toast(`Moving ${name} back`); closeWin(); setTimeout(() => loadRemote(remote, true), 1500); }
+    catch (e) { fail(e); }
+  };
+}
+
+/* remotes & pairing */
+function showRemotes(tab) {
+  const rows = st.remotes.length ? st.remotes.map((r) => `<tr>
+      <td><b>${esc(shortName(r.remote))}</b><div class="sub2">${esc(r.address || "")} · Bridge ${esc(r.bridge)}</div></td>
+      <td>${r.standby ? `<span class="status st-idle">asleep</span>` : `<span class="status st-running">${fmtMs(r.rttMs)}</span>`}<div class="sub2">linked ${ago(r.since)} · ${r.sessions} connections</div></td>
+      <td class="num"><button class="btn small" data-battery="${esc(r.remote)}">Battery</button> <button class="btn small" data-blog="${esc(r.remote)}">Bridge log</button></td></tr>`).join("")
+    : `<tr><td colspan="3" class="sub2">None yet. Use “Pair a remote”.</td></tr>`;
+  const addr = `${location.hostname}:${st.pairing.port}`;
+  openWin({ kind: "remotes", title: "Remotes", tabs: [["linked", "Linked remotes"], ["pair", "Pair a remote"]], tab,
+    body: tab === "linked" ? `<div class="tablewrap" style="border:0"><table class="rtable"><thead><tr><th>Remote</th><th>Link</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="pair">
+          <div class="pairbox"><button class="copy" data-copy="${esc(addr)}">Copy</button><div class="k">Hub address</div><div class="v">${esc(addr)}</div></div>
+          <div class="pairbox"><button class="copy" data-copy="${esc(st.pairing.token)}">Copy</button><div class="k">Pairing code</div><div class="v">${esc(st.pairing.token)}</div></div>
+        </div>
+        <ol class="howto">
+          <li>In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload the Pegasis Bridge archive.</li>
+          <li>Start its setup and enter the address and code above, plus the web-configurator PIN.</li>
+          <li>The remote appears here, and everything on the hub shows up on it.</li>
+        </ol>
+        <div class="banner warn" style="margin:14px 0 0"><span>🔑</span><span>Anyone with this code can link a remote to the hub.</span><button class="btn" id="regen">New code</button></div>` });
+  $("#winTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) showRemotes(b.dataset.tab); };
+  $("#winBody").onclick = async (e) => {
+    const c = e.target.closest("[data-copy]"); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); toast("Copied"); } catch { toast("Select it and copy by hand", true); } return; }
+    const bt = e.target.closest("[data-battery]"); if (bt) return showBattery(bt.dataset.battery, 7);
+    const bl = e.target.closest("[data-blog]"); if (bl) return showLogs(null, bl.dataset.blog);
+    if (e.target.id === "regen") {
+      if (e.target.dataset.sure !== "1") { e.target.dataset.sure = "1"; e.target.textContent = "Linked remotes disconnect. Sure?"; e.target.classList.add("danger"); return; }
+      try { await call("POST", "/pairing/regenerate"); toast("New pairing code made. Run the Bridge setup again on each remote."); await refresh(); showRemotes("pair"); } catch (err) { fail(err); }
+    }
+  };
+}
+
+/* battery */
 async function showBattery(remote, days) {
-  $("dlgTitle").textContent = "Battery — " + remote;
-  $("dlgBody").innerHTML = '<p class="muted">Loading…</p>';
-  if (!dlg.open) dlg.showModal();
+  openWin({ kind: "battery", title: `Battery — ${shortName(remote)}`, size: "wide", body: '<p class="sub2">Loading…</p>' });
   let j;
   try { j = await call("GET", `/remotes/${encodeURIComponent(remote)}/battery?days=${days}`); }
-  catch (e) { $("dlgBody").innerHTML = `<p class="s-error">${esc(e.message)}</p>`; return; }
+  catch (e) { $("#winBody").innerHTML = `<p class="bd">${esc(e.message)}</p>`; return; }
   const S = j.samples.filter((x) => typeof x.level === "number");
   const sum = j.summary, prev = j.previous;
-  const W = 860, Hh = 220, pad = 30, t1 = Date.now(), t0 = t1 - days * 864e5;
+  const W = 860, Hh = 220, pad = 32, t1 = Date.now(), t0 = t1 - days * 864e5;
   const X = (t) => pad + ((t - t0) / (t1 - t0)) * (W - pad - 8), Y = (l) => 8 + (1 - l / 100) * (Hh - 8 - 22);
-  let shades = "", line = "";
+  let shades = "";
   for (let i = 1; i < S.length; i++) {
     const a = S[i - 1], c = S[i];
     if (a.event === "standby") shades += `<rect x="${X(a.t)}" y="8" width="${Math.max(1, X(c.t) - X(a.t))}" height="${Hh - 30}" fill="var(--accent)" opacity=".10"/>`;
     if (a.charging) shades += `<rect x="${X(a.t)}" y="${Hh - 22}" width="${Math.max(1, X(c.t) - X(a.t))}" height="4" fill="var(--ok)"/>`;
   }
-  line = S.map((x, i) => `${i ? "L" : "M"}${X(x.t).toFixed(1)},${Y(x.level).toFixed(1)}`).join("");
+  const line = S.map((x, i) => `${i ? "L" : "M"}${X(x.t).toFixed(1)},${Y(x.level).toFixed(1)}`).join("");
   const grid = [0, 25, 50, 75, 100].map((l) => `<line x1="${pad}" x2="${W - 8}" y1="${Y(l)}" y2="${Y(l)}" stroke="var(--line)"/><text x="2" y="${Y(l) + 4}" font-size="10" fill="var(--mute)">${l}%</text>`).join("");
-  const dayTicks = Array.from({ length: days + 1 }, (_, i) => { const t = new Date(t0 + i * 864e5); return `<text x="${X(t0 + i * 864e5)}" y="${Hh - 4}" font-size="10" fill="var(--mute)" text-anchor="middle">${t.toLocaleDateString(undefined, { weekday: "short" })}</text>`; }).join("");
+  const ticks = Array.from({ length: days + 1 }, (_, i) => `<text x="${X(t0 + i * 864e5)}" y="${Hh - 4}" font-size="10" fill="var(--mute)" text-anchor="middle">${new Date(t0 + i * 864e5).toLocaleDateString(undefined, days === 1 ? { hour: "numeric" } : { weekday: "short" })}</text>`).join("");
   const f = (v, u) => (v == null ? "—" : v + u);
-  const cmp = (a, b) => (a == null || b == null ? "" : ` <span class="muted">(was ${b})</span>`);
-  const last = sum.last;
-  const who = sum.keptAwakeBy.length ? sum.keptAwakeBy.map((w) => esc(w.who)).join(", ") : "nothing";
-  $("dlgBody").innerHTML = `
-    <div style="display:flex;gap:6px;margin-bottom:10px">${[1, 7, 30].map((d) => `<button data-days="${d}" ${d === days ? 'class="primary"' : ""}>${d === 1 ? "24 h" : d + " days"}</button>`).join("")}</div>
-    ${S.length < 2 ? '<p class="muted">Not enough readings yet. The Bridge records the battery every 10 minutes while the remote is awake, and around sleep; give it a day.</p>' : ""}
-    <svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px">${grid}${shades}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dayTicks}</svg>
-    <p class="muted" style="margin:6px 0 12px">Shaded: asleep. Green bar: charging.</p>
-    <dl class="kv" style="grid-template-columns:auto 1fr;gap:6px 16px">
-      <dt>Now</dt><dd>${last ? `${last.level}%${last.charging ? " · charging" : ""}${last.mode ? " · " + esc(last.mode.toLowerCase().replace("_", " ")) : ""}` : "—"}</dd>
-      <dt>Drain while awake</dt><dd>${f(sum.drainPerHour.awake, " %/h")}${cmp(sum.drainPerHour.awake, prev.drainPerHour.awake)} <span class="muted">over ${sum.hours.awake} h</span></dd>
-      <dt>Drain while asleep</dt><dd>${f(sum.drainPerHour.asleep, " %/h")}${cmp(sum.drainPerHour.asleep, prev.drainPerHour.asleep)} <span class="muted">over ${sum.hours.asleep} h</span></dd>
-      <dt>A full charge lasts</dt><dd>${sum.hoursPerCharge ? `about ${Math.round(sum.hoursPerCharge / 24 * 10) / 10} days at this use` : "—"}${cmp(sum.hoursPerCharge, prev.hoursPerCharge)}</dd>
-      <dt>Kept awake</dt><dd>${sum.keptAwakeShare == null ? "—" : Math.round(sum.keptAwakeShare * 100) + "% of awake readings"} · by ${who}</dd>
-    </dl>
-    <p class="muted">"was" is the ${days === 1 ? "24 hours" : days + " days"} before. Compare a week before and after moving integrations; overnight drain is the fairest comparison.</p>`;
-  $("dlgBody").querySelectorAll("[data-days]").forEach((btn) => (btn.onclick = () => showBattery(remote, Number(btn.dataset.days))));
+  const cmp = (a, b) => (a == null || b == null ? "" : ` <span class="sub2" style="display:inline">(was ${b})</span>`);
+  const last = sum.last, who = sum.keptAwakeBy.length ? sum.keptAwakeBy.map((w) => esc(w.who)).join(", ") : "nothing";
+  $("#winBody").innerHTML = `
+    <div class="seg" style="margin:0 0 12px">${[1, 7, 30].map((d) => `<button data-days="${d}" class="${d === days ? "on" : ""}">${d === 1 ? "24 h" : d + " days"}</button>`).join("")}</div>
+    ${S.length < 2 ? '<p class="sub2">Not enough readings yet. The Bridge records the battery every 10 minutes while the remote is awake, and around sleep; give it a day.</p>' : ""}
+    <svg class="chart" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Battery level over time">${grid}${shades}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${ticks}</svg>
+    <div class="legend"><span><i style="background:var(--accent);opacity:.25"></i>asleep</span><span><i style="background:var(--ok)"></i>charging</span></div>
+    <div class="netgrid">
+      <div class="stat"><div class="k">Now</div><div class="v">${last ? `${last.level}<small>%${last.charging ? " · charging" : ""}</small>` : "—"}</div></div>
+      <div class="stat"><div class="k">Drain while awake</div><div class="v">${f(sum.drainPerHour.awake, "<small> %/h</small>")}</div><div class="sub2">over ${sum.hours.awake} h${cmp(sum.drainPerHour.awake, prev.drainPerHour.awake)}</div></div>
+      <div class="stat"><div class="k">Drain while asleep</div><div class="v">${f(sum.drainPerHour.asleep, "<small> %/h</small>")}</div><div class="sub2">over ${sum.hours.asleep} h${cmp(sum.drainPerHour.asleep, prev.drainPerHour.asleep)}</div></div>
+      <div class="stat"><div class="k">A full charge lasts</div><div class="v">${sum.hoursPerCharge ? `${Math.round(sum.hoursPerCharge / 24 * 10) / 10}<small> days</small>` : "—"}</div><div class="sub2">at this use${cmp(sum.hoursPerCharge, prev.hoursPerCharge)}</div></div>
+    </div>
+    <p class="sub2">Kept awake: ${sum.keptAwakeShare == null ? "—" : Math.round(sum.keptAwakeShare * 100) + "% of awake readings"}, by ${who}. "was" is the ${days === 1 ? "24 hours" : days + " days"} before; overnight drain is the fairest before/after comparison.</p>`;
+  $$("#winBody [data-days]").forEach((b) => (b.onclick = () => showBattery(remote, Number(b.dataset.days))));
 }
 
-let logTimer;
-function showLogs(m) {
-  $("dlgTitle").textContent = m.name + " — log";
-  $("dlgBody").innerHTML = '<pre class="log" id="logPre"></pre>';
-  dlg.showModal();
-  const load = async () => {
-    const pre = $("logPre"); if (!pre) return;
-    const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-    const j = await call("GET", `/integrations/${m.id}/logs`).catch(() => ({ lines: [] }));
-    pre.textContent = j.lines.join("\n");
-    if (atEnd) pre.scrollTop = pre.scrollHeight;
-  };
-  load(); clearInterval(logTimer); logTimer = setInterval(load, 1500);
+/* ---------------- network statistics ---------------- */
+const netState = { open: false, hours: Number(store.get("pg-net-hours", 1)), focus: null };
+function showNetwork(focus) {
+  netState.open = true; netState.focus = focus;
+  openWin({ kind: "network", title: "Network statistics", size: "wide", body: '<p class="sub2">Loading…</p>' });
+  refreshNet(); win.timer = setInterval(refreshNet, 5000);
 }
-dlg.addEventListener("close", () => { clearInterval(logTimer); clearInterval(jobTimer); refresh(); });
+function lineChart({ series, t0, t1, H = 150, yFmt, down = [] }) {
+  const W = Math.round(Math.max(340, Math.min(900, ($("#winBody")?.clientWidth || 900) - 36))), L = 46, R = 10, T = 10, B = 22;
+  const all = series.flatMap((s) => s.points.map((p) => p[1])).filter((v) => v != null);
+  let max = all.length ? Math.max(...all) : 1; if (max <= 0) max = 1;
+  const nice = (v) => { const p = 10 ** Math.floor(Math.log10(v)); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+  max = nice(max * 1.1);
+  const X = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R), Y = (v) => T + (1 - v / max) * (H - T - B);
+  const grid = [0, .5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${Y(max * f)}" y2="${Y(max * f)}" stroke="var(--line)"/><text x="${L - 6}" y="${Y(max * f) + 4}" font-size="10.5" fill="var(--mute)" text-anchor="end">${yFmt(max * f)}</text>`).join("");
+  const span = t1 - t0, fit = Math.max(2, Math.floor((W - L - R) / 75));
+  const step = [300e3, 600e3, 900e3, 1800e3, 3600e3, 7200e3, 4 * 3600e3, 6 * 3600e3].find((x) => span / x <= fit) || 12 * 3600e3;
+  let ticks = ""; for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ticks += `<text x="${X(t)}" y="${H - 6}" font-size="10.5" fill="var(--mute)" text-anchor="middle">${new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</text>`;
+  const drops = down.map((t) => `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" stroke="var(--bad)" stroke-dasharray="3 3"/>`).join("");
+  const paths = series.map((s) => {
+    if (s.bars) { const bw = Math.max(1, (W - L - R) / ((t1 - t0) / 60000) - 1); return s.points.filter((p) => p[1] != null).map(([t, v]) => `<rect x="${X(t) + (s.offset || 0) * bw / 2}" y="${Y(v)}" width="${bw / 2}" height="${Math.max(0, H - B - Y(v))}" fill="${s.color}" opacity=".85"><title>${new Date(t).toLocaleTimeString()} · ${yFmt(v)}</title></rect>`).join(""); }
+    let d = "", on = false;
+    for (const [t, v] of s.points) { if (v == null) { on = false; continue; } d += `${on ? "L" : "M"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`; on = true; }
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round"/>`;
+  }).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${grid}${ticks}${drops}${paths}</svg>`;
+}
+function renderNetwork() {
+  if (!net || win.kind !== "network") return;
+  const now = net.now, hours = netState.hours, t0 = now - hours * 3600e3;
+  const remotes = net.remotes.length ? net.remotes.map((r) => {
+    const h = r.history.filter((x) => x.t >= t0);
+    const status = !r.connected ? `<span class="status st-stopped">not linked</span>${r.lastDown ? `<span class="sub2">since ${ago(r.lastDown)} ago</span>` : ""}` : r.standby ? `<span class="status st-idle">asleep</span>` : `<span class="status st-running">linked</span>`;
+    return `<div class="netsec">
+      <div class="nethead"><h4>${esc(shortName(r.remote))}</h4>${status}<span class="sub2" style="margin:0">${r.connected ? `up ${ago(r.since)}` : ""}${r.reconnects ? ` · ${r.reconnects} reconnect${r.reconnects > 1 ? "s" : ""}` : ""}${r.bridge ? ` · Bridge ${esc(r.bridge)}` : ""}${r.address ? ` · ${esc(r.address)}` : ""}</span></div>
+      <div class="netgrid">
+        <div class="stat"><div class="k">Round trip now</div><div class="v">${fmtMs(r.rtt.now)}</div><div class="sub2">median ${fmtMs(r.rtt.median)} · 95% ${fmtMs(r.rtt.p95)}</div></div>
+        <div class="stat"><div class="k">Best · worst</div><div class="v">${fmtMs(r.rtt.min)} <small>·</small> ${fmtMs(r.rtt.max)}</div><div class="sub2">of the last 200 link checks</div></div>
+        <div class="stat"><div class="k">Traffic now (5 min)</div><div class="v"><span style="color:var(--in)">↓</span>${fmtRate(r.rate.inBps)} <span style="color:var(--out)">↑</span>${fmtRate(r.rate.outBps)}</div><div class="sub2">${fmtN(r.rate.msgsPerMin)} messages / min</div></div>
+        <div class="stat"><div class="k">Since the hub started</div><div class="v"><small>from remote</small> ${fmtBytes(r.totals.bytesIn)}</div><div class="sub2">to remote ${fmtBytes(r.totals.bytesOut)} · ${fmtN(r.totals.msgsIn + r.totals.msgsOut)} msgs</div></div>
+      </div>
+      ${h.length ? `
+      ${lineChart({ t0, t1: now, yFmt: (v) => fmtMs(v), down: h.filter((x) => x.down).map((x) => x.t), series: [
+        { color: "var(--accent)", points: h.map((x) => [x.t + 30e3, x.rtt]) },
+        { color: "var(--faint)", dash: "4 3", width: 1.5, points: h.map((x) => [x.t + 30e3, x.rttMax]) }] })}
+      <div class="legend"><span><i style="background:var(--accent)"></i>round trip, average per minute</span><span><i style="background:var(--faint)"></i>slowest in that minute</span><span><i style="background:var(--bad)"></i>link dropped</span></div>
+      ${lineChart({ t0, t1: now, H: 130, yFmt: (v) => fmtBytes(v), series: [
+        { bars: true, color: "var(--in)", offset: 0, points: h.map((x) => [x.t, x.bytesIn]) },
+        { bars: true, color: "var(--out)", offset: 1, points: h.map((x) => [x.t, x.bytesOut]) }] })}
+      <div class="legend"><span><i style="background:var(--in)"></i>from the remote, per minute</span><span><i style="background:var(--out)"></i>to the remote, per minute</span></div>` : `<p class="sub2">No traffic in this period${r.standby ? " (the remote is asleep; the link checks in once a minute)" : ""}.</p>`}
+    </div>`;
+  }).join("") : `<p class="sub2">No remote has linked since the hub started.</p>`;
 
-function showSettings(m) {
-  $("dlgTitle").textContent = m.name + " — settings";
-  $("dlgBody").innerHTML = `
-    <label><input type="checkbox" id="optAuto" ${m.autostart ? "checked" : ""}> Start with the hub</label>
-    <label class="f">Run command (empty = detected: <code>${esc(m.detectedCommand.join(" "))}</code>, in <code>${esc(m.cwd || ".")}</code>)</label>
-    <input type="text" id="optCmd" value="${esc(m.commandOverride ? m.commandOverride.join(" ") : "")}">
-    <label class="f">Extra environment variables (NAME=value per line)</label>
-    <textarea id="optEnv">${esc(Object.entries(m.env || {}).map(([k, v]) => k + "=" + v).join("\n"))}</textarea>
-    <p class="muted">Internal port ${m.port} · config kept in <code>integrations/${esc(m.id)}/config</code> across updates.</p>
-    <div class="inline"><button class="primary" id="optSave">Save and restart</button></div>`;
-  dlg.showModal();
-  $("optSave").onclick = async () => {
-    const env = Object.fromEntries($("optEnv").value.split("\n").map((l) => l.trim()).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1)]));
-    try {
-      await call("PATCH", "/integrations/" + m.id, { autostart: $("optAuto").checked, command: $("optCmd").value.trim(), env });
-      await call("POST", `/integrations/${m.id}/restart`);
-      dlg.close();
-    } catch (e) { alert(e.message); }
-  };
+  const ints = [...net.integrations].sort((a, b) => (b.totals.msgsIn + b.totals.msgsOut) - (a.totals.msgsIn + a.totals.msgsOut));
+  const focusRow = (x) => netState.focus && x.id === netState.focus ? ' style="background:var(--accent-soft)"' : "";
+  const table = ints.length ? `<div class="tablewrap"><table>
+    <thead><tr><th>Integration</th><th class="num" title="Requests from the remote (commands, browsing, entity states)">Requests</th><th class="num" title="Time the integration takes to answer, measured on the hub">Answers in</th><th class="num">95%</th><th>Slowest</th><th class="num">Events</th><th class="num">Traffic ↓ / ↑</th><th class="num">Last used</th></tr></thead>
+    <tbody>${ints.map((x) => `<tr${focusRow(x)}><td><b>${esc(x.name)}</b>${x.openFailed ? `<div class="sub2 bd">${x.openFailed} failed connection${x.openFailed > 1 ? "s" : ""}</div>` : ""}</td>
+      <td class="num">${fmtN(x.requests)}</td><td class="num">${fmtMs(x.response.median)}</td><td class="num">${fmtMs(x.response.p95)}</td>
+      <td>${x.response.slowest ? `${fmtMs(x.response.slowest.ms)} <span class="sub2" style="display:inline">${esc(x.response.slowest.msg)}</span>` : "—"}</td>
+      <td class="num">${fmtN(x.events)}</td><td class="num">${fmtBytes(x.totals.bytesIn)} / ${fmtBytes(x.totals.bytesOut)}</td><td class="num">${x.lastActive ? ago(x.lastActive) + " ago" : "—"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="sub2">"Answers in" is how long the integration takes to reply to the remote, measured on the hub. The time a button press takes is about that plus the link's round trip. Figures cover the time since the hub started.</p>` : `<p class="sub2">No integration has been used through the link yet.</p>`;
+
+  const keep = $("#winBody").scrollTop;
+  $("#winBody").innerHTML = `
+    <div class="nethead" style="margin-bottom:4px"><span class="sub2" style="margin:0">Updates every 5 seconds.</span>
+      <div class="seg">${[[1, "1 h"], [6, "6 h"], [24, "24 h"]].map(([v, l]) => `<button data-hours="${v}" class="${v === hours ? "on" : ""}" aria-pressed="${v === hours}">${l}</button>`).join("")}</div></div>
+    ${remotes}
+    <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Integrations</h4></div>${table}</div>`;
+  $("#winBody").scrollTop = keep;
+  $$("#winBody [data-hours]").forEach((b) => (b.onclick = () => { netState.hours = Number(b.dataset.hours); store.set("pg-net-hours", netState.hours); renderNetwork(); }));
 }
 
-let jobTimer;
-function followJob(jobId, title) {
-  $("dlgTitle").textContent = title;
-  $("dlgBody").innerHTML = '<pre class="log" id="jobPre"></pre><p class="muted" id="jobState">Working…</p>';
-  dlg.showModal();
-  clearInterval(jobTimer);
-  jobTimer = setInterval(async () => {
-    const j = await call("GET", "/jobs/" + jobId).catch(() => null); if (!j || !$("jobPre")) return;
-    $("jobPre").textContent = j.lines.join("\n"); $("jobPre").scrollTop = 1e9;
-    if (j.state !== "running") {
-      clearInterval(jobTimer);
-      $("jobState").innerHTML = j.state === "done" ? `<b class="s-running">Done.</b> It appears on every linked remote under Integrations; open it there to run its setup.` : `<b class="s-error">Failed:</b> ${esc(j.error)}`;
-      refresh();
-    }
-  }, 700);
-}
-
-$("installGit").onclick = async () => {
-  const url = $("gitUrl").value.trim(); if (!url) return;
-  try { const j = await call("POST", "/integrations", { url, ref: $("gitRef").value.trim() }); followJob(j.job, "Installing " + url); $("gitUrl").value = ""; $("gitRef").value = ""; }
-  catch (e) { alert(e.message); }
-};
-$("installArchive").onclick = async () => {
-  const f = $("archive").files[0]; if (!f) return;
-  try { const j = await call("POST", "/integrations/upload?name=" + encodeURIComponent(f.name), undefined, f); followJob(j.job, "Installing " + f.name); }
-  catch (e) { alert(e.message); }
-};
-$("regen").onclick = async () => {
-  if (!confirm("Make a new pairing code? Linked remotes disconnect until their Bridge setup is run again with the new code.")) return;
-  await call("POST", "/pairing/regenerate"); refresh();
-};
-$("checkUpd").onclick = async (e) => { e.target.disabled = true; try { items = await call("POST", "/integrations/check-updates"); render(); } finally { e.target.disabled = false; } };
-
-refresh();
-setInterval(() => { if (!dlg.open) refresh(); }, 3000);
+/* ---------------- start ---------------- */
+applyTheme();
+refresh().then(refreshNet);
+setInterval(() => { if (!win.kind || win.kind === "network") refresh(); }, 3000);
+setInterval(() => { if (!netState.open) refreshNet(); }, 15000);
 </script>
 </body>
 </html>

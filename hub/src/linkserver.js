@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { redact } from "./redact.js";
+import { NetStats } from "./netstats.js";
 import { Rpc } from "./linkproto.js";
 import { T, PROTO_VERSION, pingPayload, pingTime, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
 
@@ -12,8 +13,9 @@ const HELLO_TIMEOUT_MS = 5000;
 const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 
 export class LinkServer {
-  constructor({ store, supervisor, version, log, battery }) {
+  constructor({ store, supervisor, version, log, battery, net }) {
     this.battery = battery;
+    this.net = net || new NetStats();
     this.store = store;
     this.sup = supervisor;
     this.version = version;
@@ -36,13 +38,23 @@ export class LinkServer {
           l.ws.terminate();
           continue;
         }
-        if (quiet >= t.ping - 50 && now - (l.lastPing || 0) >= t.ping - 50) {
+        // quiet links are pinged to see they're alive; busy ones every 30 s too, for the round-trip figures
+        // (the remote's radio is awake anyway while there's traffic)
+        const due = quiet >= t.ping - 50 ? t.ping - 50 : l.standby ? Infinity : 30000;
+        if (now - (l.lastPing || 0) >= due) {
           l.lastPing = now;
-          l.ws.send(encode(T.PING, 0, pingPayload()));
+          this.#tx(l, encode(T.PING, 0, pingPayload()));
         }
       }
     }, 5000);
     this.pingTimer.unref?.();
+  }
+
+  /** Sends a frame to a bridge, counting it for the network statistics. */
+  #tx(link, frame) {
+    if (link.ws.readyState !== WebSocket.OPEN) return;
+    link.ws.send(frame);
+    if (link.remote) this.net.frame(link.remote, "out", frame.length);
   }
 
   handle(method, fn) {
@@ -88,7 +100,7 @@ export class LinkServer {
     clearTimeout(this.catalogTimer);
     this.catalogTimer = setTimeout(() => {
       const frame = json(T.CATALOG, { drivers: this.catalog(), ...this.#removed() });
-      for (const l of this.links) if (l.ready) l.ws.send(frame);
+      for (const l of this.links) if (l.ready) this.#tx(l, frame);
     }, 150);
   }
 
@@ -133,7 +145,7 @@ export class LinkServer {
       bridge: null,
       rttMs: null
     };
-    link.rpc = new Rpc((frame) => ws.readyState === WebSocket.OPEN && ws.send(frame), this.rpcHandlers);
+    link.rpc = new Rpc((frame) => this.#tx(link, frame), this.rpcHandlers);
     this.links.add(link);
     const helloTimer = setTimeout(() => ws.close(4001, "no hello"), HELLO_TIMEOUT_MS);
 
@@ -156,7 +168,9 @@ export class LinkServer {
         link.remote = String(hello.remote || "remote").slice(0, 80);
         link.bridge = String(hello.bridge || "?").slice(0, 20);
         this.log(`link up: ${link.remote} (bridge ${link.bridge}) from ${link.address}`);
-        ws.send(
+        this.net.linkUp(link.remote);
+        this.#tx(
+          link,
           json(T.WELCOME, {
             proto: PROTO_VERSION,
             hub: process.env.PEGASIS_NAME || "Pegasis Hub",
@@ -167,6 +181,7 @@ export class LinkServer {
         );
         return;
       }
+      this.net.frame(link.remote, "in", data.length ?? f.payload.length + 5);
       this.#frame(link, f);
     });
 
@@ -175,7 +190,10 @@ export class LinkServer {
       clearTimeout(helloTimer);
       this.links.delete(link);
       for (const [ch, s] of link.sessions) this.#endSession(link, ch, s, 1001, "link closed", false);
-      if (link.ready) this.log(`link down: ${link.remote}`);
+      if (link.ready) {
+        this.log(`link down: ${link.remote}`);
+        this.net.linkDown(link.remote);
+      }
     });
     ws.on("error", () => {});
   }
@@ -185,11 +203,14 @@ export class LinkServer {
     if (link.rpc.onFrame(type, payload, link)) return;
     switch (type) {
       case T.PING:
-        link.ws.send(encode(T.PONG, 0, payload));
+        this.#tx(link, encode(T.PONG, 0, payload));
         return;
       case T.PONG: {
         const rtt = performance.now() - pingTime(payload);
-        if (rtt >= 0 && rtt < 60000) link.rttMs = rtt;
+        if (rtt >= 0 && rtt < 60000) {
+          link.rttMs = rtt;
+          this.net.rtt(link.remote, rtt);
+        }
         return;
       }
       case T.STATUS: {
@@ -214,6 +235,7 @@ export class LinkServer {
         const s = link.sessions.get(channel);
         if (!s) return;
         const isBin = type === T.BIN;
+        this.net.message(s.id, channel, "in", payload, !isBin);
         if (s.driverWs.readyState === WebSocket.OPEN) s.driverWs.send(payload, { binary: isBin });
         else if (s.driverWs.readyState === WebSocket.CONNECTING) {
           s.queued += payload.length;
@@ -235,39 +257,42 @@ export class LinkServer {
 
   #open(link, channel, remoteId) {
     const meta = this.store.list().find((m) => remoteDriverId(m.id) === remoteId || m.id === remoteId);
-    if (!meta) return link.ws.send(encode(T.OPEN_FAIL, channel, `not installed: ${remoteId}`));
+    if (!meta) return this.#tx(link, encode(T.OPEN_FAIL, channel, `not installed: ${remoteId}`));
     const state = this.sup.info(meta.id).state;
     if (state !== "running" && state !== "starting") {
-      return link.ws.send(encode(T.OPEN_FAIL, channel, `${meta.name} is ${state}`));
+      return this.#tx(link, encode(T.OPEN_FAIL, channel, `${meta.name} is ${state}`));
     }
     const driverWs = new WebSocket(`ws://127.0.0.1:${meta.port}/`, { perMessageDeflate: false, handshakeTimeout: 10000 });
     const s = { driverWs, queue: [], queued: 0, id: meta.id, closed: false };
     link.sessions.set(channel, s);
+    this.net.sessionOpened(meta.id);
 
     driverWs.on("open", () => {
       driverWs._socket?.setNoDelay?.(true);
       for (const [buf, isBin] of s.queue) driverWs.send(buf, { binary: isBin });
       s.queue = [];
       s.queued = 0;
-      if (link.ws.readyState === WebSocket.OPEN) link.ws.send(encode(T.OPENED, channel));
+      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encode(T.OPENED, channel));
     });
     driverWs.on("message", (data, isBinary) => {
       if (link.ws.readyState !== WebSocket.OPEN) return;
       const buf = Buffer.isBuffer(data) ? data : Buffer.concat(data);
-      link.ws.send(encode(isBinary ? T.BIN : T.TEXT, channel, buf));
+      this.net.message(s.id, channel, "out", buf, !isBinary);
+      this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, buf));
     });
     driverWs.on("close", (code, reason) => {
       if (s.closed) return;
       s.closed = true;
       link.sessions.delete(channel);
-      if (link.ws.readyState === WebSocket.OPEN) link.ws.send(encodeClose(channel, safeCloseCode(code), reason.toString()));
+      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encodeClose(channel, safeCloseCode(code), reason.toString()));
     });
     driverWs.on("error", (e) => {
       if (s.closed) return;
       s.closed = true;
       link.sessions.delete(channel);
       this.sup.note(meta.id, `link session failed: ${e.message}`);
-      if (link.ws.readyState === WebSocket.OPEN) link.ws.send(encode(T.OPEN_FAIL, channel, e.message));
+      this.net.sessionFailed(meta.id);
+      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encode(T.OPEN_FAIL, channel, e.message));
     });
   }
 
@@ -281,7 +306,7 @@ export class LinkServer {
     } catch {
       /* ignore */
     }
-    if (tellBridge && link.ws.readyState === WebSocket.OPEN) link.ws.send(encodeClose(channel, code, reason));
+    if (tellBridge) this.#tx(link, encodeClose(channel, code, reason));
   }
 
   /** Drops all sessions of one hosted driver (e.g. it is being restarted or updated). */

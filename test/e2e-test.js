@@ -194,6 +194,14 @@ try {
   const ev = await until(() => s.events.find((e) => e.msg === "entity_change" && e.msg_data.entity_id === "sim_switch"), 5000, "entity_change");
   assert.equal(ev.msg_data.attributes.state, "ON");
   console.log("  entities, command and entity_change event all passed through");
+  {
+    const net = await (await fetch(`http://127.0.0.1:${hub.server.address().port}/api/network`)).json();
+    const r = net.remotes[0];
+    const sim = net.integrations.find((x) => x.id === "sim_node");
+    assert.ok(r && r.connected && r.totals.bytesIn > 0 && r.totals.bytesOut > 0, "remote traffic counted");
+    assert.ok(sim && sim.requests >= 3 && sim.response.n >= 3 && sim.events >= 1, "driver requests timed");
+    console.log(`  network stats: ${sim.requests} requests timed (median ${sim.response.median.toFixed(1)} ms), ${r.totals.msgsIn + r.totals.msgsOut} link frames`);
+  }
 
   step("the core talks to the hosted Python driver through the tunnel");
   {

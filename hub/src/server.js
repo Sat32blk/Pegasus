@@ -77,8 +77,14 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         arch: hostArch(),
         pairing: { token: store.hub.token, port: server.address().port },
         remotes: link.status(),
+        hubMemMB: Math.round(process.memoryUsage().rss / 1048576),
         integrations: store.list().length
       });
+    }
+    if (m === "GET" && p[0] === "network") {
+      const live = Object.fromEntries(link.status().map((r) => [r.remote, r]));
+      const names = Object.fromEntries(store.list().map((x) => [x.id, x.name]));
+      return send(res, 200, link.net.snapshot(live, names));
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery") {
       const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 7));
@@ -104,7 +110,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "log") {
       const lines = link.bridgeLog(p[1]);
-      return lines ? send(res, 200, { lines }) : send(404, { error: "that remote is not linked" });
+      return lines ? send(res, 200, { lines }) : send(res, 404, { error: "that remote is not linked" });
     }
     if (m === "POST" && p[0] === "pairing" && p[1] === "regenerate") {
       const token = store.regenerateToken();
@@ -145,6 +151,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       if (!p[2] && m === "DELETE") {
         link.dropDriver(id);
         await mgr.remove(id);
+        link.net.forget(id);
         return send(res, 200, { removed: id });
       }
       if (p[2] === "logs" && m === "GET") return send(res, 200, { lines: sup.logs(id) });
@@ -170,7 +177,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   }
 
   function view(meta) {
-    return { ...meta, status: sup.info(meta.id), shownAs: link.shownAs(meta.id) };
+    return { ...meta, status: sup.info(meta.id), usage: sup.usage(meta.id), shownAs: link.shownAs(meta.id) };
   }
 
   server.on("upgrade", (req, socket, head) => {
