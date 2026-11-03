@@ -14,6 +14,7 @@ import { Store } from "./store.js";
 import { Supervisor } from "./supervisor.js";
 import { Manager } from "./manager.js";
 import { LinkServer } from "./linkserver.js";
+import { BatteryStore, summarize } from "./battery.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
 
@@ -34,7 +35,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const scrubbed = sup.scrubLogs();
   if (scrubbed) say(`masked API keys, passwords and tokens in ${scrubbed} older log file(s)`);
   const mgr = new Manager({ store, supervisor: sup, log: say });
-  const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say });
+  const battery = new BatteryStore(dataDir);
+  const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery });
 
   sup.on("change", (id, state) => {
     if (state === "crashed" || state === "stopped") link.dropDriver(id);
@@ -73,6 +75,18 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         pairing: { token: store.hub.token, port: server.address().port },
         remotes: link.status(),
         integrations: store.list().length
+      });
+    }
+    if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery") {
+      const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 7));
+      const all = battery.samples(p[1]);
+      const now = Date.now();
+      const from = now - days * 24 * 3600 * 1000;
+      return send(res, 200, {
+        days,
+        samples: all.filter((x) => x.t >= from),
+        summary: summarize(all, { from }),
+        previous: summarize(all, { from: from - days * 24 * 3600 * 1000, to: from })
       });
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "log") {

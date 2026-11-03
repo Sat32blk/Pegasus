@@ -1,6 +1,6 @@
 {
   "name": "pegasis-hub",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Hosts Unfolded Circle integration drivers in Docker and serves them to the Pegasis Bridge on the remote over one fast multiplexed link.",
   "type": "module",
   "private": true,

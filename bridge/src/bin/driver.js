@@ -16,6 +16,7 @@ import { CoreClient } from "./core.js";
 import { LinkClient } from "./link.js";
 import { Tunnels } from "./tunnels.js";
 import { Registrar } from "./registrar.js";
+import { BatteryTracker } from "./battery.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DRIVER_JSON = fs.existsSync(path.join(HERE, "driver.json")) ? path.join(HERE, "driver.json") : path.join(HERE, "..", "driver.json");
@@ -31,21 +32,26 @@ const log = (...a) => {
   scheduleReport();
 };
 
-/** Tells the hub how things stand on this remote: IDs, problems, notes and recent log. */
+/** Tells the hub how things stand on this remote: IDs, problems, notes, recent log and battery. */
 let reportTimer = null;
+let resendBattery = true; // after (re)connecting, send the last 2 days again (the hub ignores duplicates)
 function scheduleReport() {
   if (reportTimer) return;
   reportTimer = setTimeout(() => {
     reportTimer = null;
     if (!link?.up || !registrar) return;
     const s = registrar.summary();
+    const batt = battery ? battery.pending(resendBattery) : [];
     link.report({
+      battery: batt,
       registered: registrar.mapping(),
       problems: Object.fromEntries(s.problems),
       notes: Object.fromEntries(s.notes),
       access: !!config?.apiKey,
       log: recentLog.slice(-150)
     });
+    battery?.markSent(batt);
+    resendBattery = false;
   }, 500);
 }
 
@@ -56,6 +62,7 @@ let core = null;
 let link = null;
 let tunnels = null;
 let registrar = null;
+let battery = null;
 
 function loadConfig() {
   try {
@@ -154,7 +161,10 @@ async function startLink() {
     onChange: () => scheduleReport()
   });
   link.on("state", (state) => {
-    if (state === "up") scheduleReport();
+    if (state === "up") {
+      resendBattery = true;
+      scheduleReport();
+    }
     if (state !== "up") {
       tunnels.dropAll();
       publish(latencySensor, { state: uc.SensorStates.Unavailable });
@@ -170,10 +180,12 @@ async function startLink() {
   link.on("rtt", publishRtt);
   await registrar.restore();
   link.start();
+  battery?.start();
   refreshStatus();
 }
 
 async function stopLink() {
+  battery?.stop();
   link?.stop();
   link = null;
   await tunnels?.closeAll();
@@ -294,8 +306,15 @@ api.on(uc.Events.Connect, async () => {
   refreshStatus();
 });
 // The remote is going to sleep / waking up: slow the link's heartbeat down / check the link at once.
-api.on(uc.Events.EnterStandby, async () => link?.setStandby(true));
-api.on(uc.Events.ExitStandby, async () => link?.setStandby(false));
+api.on(uc.Events.EnterStandby, async () => {
+  await battery?.sample("standby"); // last reading before sleep (sent to the hub after waking)
+  battery?.stop();
+  link?.setStandby(true);
+});
+api.on(uc.Events.ExitStandby, async () => {
+  link?.setStandby(false);
+  battery?.start(); // first reading after waking
+});
 
 api.on(uc.Events.SubscribeEntities, async () => {
   lastStatus = "";
@@ -306,6 +325,12 @@ for (const e of [statusSensor, latencySensor, resyncButton]) api.addAvailableEnt
 api.init(DRIVER_JSON, setupHandler);
 cfgFile = path.join(api.getConfigDirPath(), "pegasis_bridge.json");
 config = loadConfig();
+battery = new BatteryTracker({
+  getCore: () => core,
+  file: path.join(api.getConfigDirPath(), "battery.json"),
+  log,
+  onSample: () => scheduleReport()
+});
 if (config) {
   log(`starting: hub ${config.hub}`);
   startLink().catch((e) => log("start failed:", e.message));

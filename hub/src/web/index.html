@@ -114,7 +114,7 @@ async function refresh() {
     $("pairAddr").textContent = location.hostname + ":" + st.pairing.port;
     $("pairCode").textContent = st.pairing.token;
     $("linkState").innerHTML = st.remotes.length
-      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open${r.access === false ? ` · <span class="s-error">no access: rerun Bridge setup</span>` : ""} · <a href="#" data-remote-log="${esc(r.remote)}">Bridge log</a>`).join("<br>")
+      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open${r.access === false ? ` · <span class="s-error">no access: rerun Bridge setup</span>` : ""} · <a href="#" data-remote-battery="${esc(r.remote)}">Battery</a> · <a href="#" data-remote-log="${esc(r.remote)}">Bridge log</a>`).join("<br>")
       : "No remote linked";
     items = await call("GET", "/integrations");
     render();
@@ -161,7 +161,9 @@ $("list").addEventListener("click", async (ev) => {
   refresh();
 });
 
-$("linkState").addEventListener("click", (ev) => {
+$("linkState").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-remote-battery]");
+  if (b) { ev.preventDefault(); return showBattery(b.dataset.remoteBattery, 7); }
   const a = ev.target.closest("[data-remote-log]"); if (!a) return;
   ev.preventDefault();
   const remote = a.dataset.remoteLog;
@@ -176,6 +178,47 @@ $("linkState").addEventListener("click", (ev) => {
   };
   load(); clearInterval(logTimer); logTimer = setInterval(load, 2000);
 });
+
+// Battery: level over time (asleep stretches shaded, charging marked) and drain figures.
+async function showBattery(remote, days) {
+  $("dlgTitle").textContent = "Battery — " + remote;
+  $("dlgBody").innerHTML = '<p class="muted">Loading…</p>';
+  if (!dlg.open) dlg.showModal();
+  let j;
+  try { j = await call("GET", `/remotes/${encodeURIComponent(remote)}/battery?days=${days}`); }
+  catch (e) { $("dlgBody").innerHTML = `<p class="s-error">${esc(e.message)}</p>`; return; }
+  const S = j.samples.filter((x) => typeof x.level === "number");
+  const sum = j.summary, prev = j.previous;
+  const W = 860, Hh = 220, pad = 30, t1 = Date.now(), t0 = t1 - days * 864e5;
+  const X = (t) => pad + ((t - t0) / (t1 - t0)) * (W - pad - 8), Y = (l) => 8 + (1 - l / 100) * (Hh - 8 - 22);
+  let shades = "", line = "";
+  for (let i = 1; i < S.length; i++) {
+    const a = S[i - 1], c = S[i];
+    if (a.event === "standby") shades += `<rect x="${X(a.t)}" y="8" width="${Math.max(1, X(c.t) - X(a.t))}" height="${Hh - 30}" fill="var(--accent)" opacity=".10"/>`;
+    if (a.charging) shades += `<rect x="${X(a.t)}" y="${Hh - 22}" width="${Math.max(1, X(c.t) - X(a.t))}" height="4" fill="var(--ok)"/>`;
+  }
+  line = S.map((x, i) => `${i ? "L" : "M"}${X(x.t).toFixed(1)},${Y(x.level).toFixed(1)}`).join("");
+  const grid = [0, 25, 50, 75, 100].map((l) => `<line x1="${pad}" x2="${W - 8}" y1="${Y(l)}" y2="${Y(l)}" stroke="var(--line)"/><text x="2" y="${Y(l) + 4}" font-size="10" fill="var(--mute)">${l}%</text>`).join("");
+  const dayTicks = Array.from({ length: days + 1 }, (_, i) => { const t = new Date(t0 + i * 864e5); return `<text x="${X(t0 + i * 864e5)}" y="${Hh - 4}" font-size="10" fill="var(--mute)" text-anchor="middle">${t.toLocaleDateString(undefined, { weekday: "short" })}</text>`; }).join("");
+  const f = (v, u) => (v == null ? "—" : v + u);
+  const cmp = (a, b) => (a == null || b == null ? "" : ` <span class="muted">(was ${b})</span>`);
+  const last = sum.last;
+  const who = sum.keptAwakeBy.length ? sum.keptAwakeBy.map((w) => esc(w.who)).join(", ") : "nothing";
+  $("dlgBody").innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:10px">${[1, 7, 30].map((d) => `<button data-days="${d}" ${d === days ? 'class="primary"' : ""}>${d === 1 ? "24 h" : d + " days"}</button>`).join("")}</div>
+    ${S.length < 2 ? '<p class="muted">Not enough readings yet. The Bridge records the battery every 10 minutes while the remote is awake, and around sleep; give it a day.</p>' : ""}
+    <svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px">${grid}${shades}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dayTicks}</svg>
+    <p class="muted" style="margin:6px 0 12px">Shaded: asleep. Green bar: charging.</p>
+    <dl class="kv" style="grid-template-columns:auto 1fr;gap:6px 16px">
+      <dt>Now</dt><dd>${last ? `${last.level}%${last.charging ? " · charging" : ""}${last.mode ? " · " + esc(last.mode.toLowerCase().replace("_", " ")) : ""}` : "—"}</dd>
+      <dt>Drain while awake</dt><dd>${f(sum.drainPerHour.awake, " %/h")}${cmp(sum.drainPerHour.awake, prev.drainPerHour.awake)} <span class="muted">over ${sum.hours.awake} h</span></dd>
+      <dt>Drain while asleep</dt><dd>${f(sum.drainPerHour.asleep, " %/h")}${cmp(sum.drainPerHour.asleep, prev.drainPerHour.asleep)} <span class="muted">over ${sum.hours.asleep} h</span></dd>
+      <dt>A full charge lasts</dt><dd>${sum.hoursPerCharge ? `about ${Math.round(sum.hoursPerCharge / 24 * 10) / 10} days at this use` : "—"}${cmp(sum.hoursPerCharge, prev.hoursPerCharge)}</dd>
+      <dt>Kept awake</dt><dd>${sum.keptAwakeShare == null ? "—" : Math.round(sum.keptAwakeShare * 100) + "% of awake readings"} · by ${who}</dd>
+    </dl>
+    <p class="muted">"was" is the ${days === 1 ? "24 hours" : days + " days"} before. Compare a week before and after moving integrations; overnight drain is the fairest comparison.</p>`;
+  $("dlgBody").querySelectorAll("[data-days]").forEach((btn) => (btn.onclick = () => showBattery(remote, Number(btn.dataset.days))));
+}
 
 let logTimer;
 function showLogs(m) {

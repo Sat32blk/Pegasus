@@ -11,7 +11,8 @@ const HELLO_TIMEOUT_MS = 5000;
 const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 
 export class LinkServer {
-  constructor({ store, supervisor, version, log }) {
+  constructor({ store, supervisor, version, log, battery }) {
+    this.battery = battery;
     this.store = store;
     this.sup = supervisor;
     this.version = version;
@@ -174,6 +175,7 @@ export class LinkServer {
         if (st.problems && typeof st.problems === "object") link.problems = st.problems;
         if (st.notes && typeof st.notes === "object") link.notes = st.notes;
         if (typeof st.access === "boolean") link.access = st.access;
+        if (Array.isArray(st.battery) && st.battery.length && this.battery) this.battery.add(link.remote, st.battery.slice(-5000));
         if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
