@@ -1,0 +1,13 @@
+{
+  "name": "pegasis",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Pegasis: run Unfolded Circle integrations in Docker and present them on the remote as if installed on it.",
+  "scripts": {
+    "test": "node test/proto-test.js && node test/registrar-test.js && node test/e2e-test.js",
+    "sync-proto": "node tools/sync-proto.js"
+  },
+  "devDependencies": { "ws": "8.18.3" },
+  "license": "MIT"
+}

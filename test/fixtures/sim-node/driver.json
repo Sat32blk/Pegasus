@@ -1,0 +1,1 @@
+{ "driver_id": "sim_node", "version": "1.0.0", "name": { "en": "Simulated Node driver" }, "icon": "uc:light", "developer": { "name": "test" }, "setup_data_schema": { "title": { "en": "x" }, "settings": [] } }

@@ -1,0 +1,1 @@
+{ "driver_id": "sim_python", "version": "2.0.0", "name": { "en": "Simulated Python driver" }, "icon": "uc:tv", "developer": { "name": "test" }, "setup_data_schema": { "title": { "en": "x" }, "settings": [] } }

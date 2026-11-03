@@ -1,0 +1,1 @@
+{ "name": "sim-node", "version": "1.0.0", "type": "module", "main": "driver.js", "dependencies": { "@unfoldedcircle/integration-api": "0.5.0" } }

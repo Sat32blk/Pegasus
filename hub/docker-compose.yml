@@ -1,0 +1,22 @@
+# Pegasis Hub
+# On OpenMediaVault: Services → Compose → Files → Add, paste this, and change the data folder
+# (the left side of "volumes") to a folder on one of your shares.
+services:
+  pegasis-hub:
+    image: ghcr.io/sat32blk/pegasis-hub:latest
+    # build: .                       # or build it on the server: run "docker compose up -d --build" in this folder
+    container_name: pegasis-hub
+    restart: unless-stopped
+    # Host networking: many integrations find their devices with mDNS / SSDP broadcasts, which
+    # don't cross Docker's own networks. The page and the link are on PEGASIS_PORT; each
+    # integration also uses a port from 10100 up, but only on 127.0.0.1 inside the container.
+    network_mode: host
+    environment:
+      - PEGASIS_PORT=9600            # page at http://server:9600, remotes link here too
+      - PUID=1000                    # integrations run as this user, not root (PUID=0 for root)
+      - PGID=100
+      - TZ=America/New_York
+      # - PEGASIS_PASSWORD=change-me # optional login for the page (remotes use the pairing code)
+      # - PEGASIS_NAME=Pegasis Hub   # name shown to remotes
+    volumes:
+      - ./data:/data                 # installed integrations, their settings and logs, pairing code

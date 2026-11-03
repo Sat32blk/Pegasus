@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pegasis Hub</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#16181d;--mute:#626875;--line:#e2e4e9;--accent:#3b5bdb;--ok:#2b8a3e;--warn:#e67700;--bad:#c92a2a;--chip:#eef0f4;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#111317;--card:#1a1d23;--ink:#e8eaee;--mute:#9aa1ad;--line:#2b2f37;--accent:#7b93ff;--ok:#51cf66;--warn:#ffa94d;--bad:#ff6b6b;--chip:#252932}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
+header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:.2px}
+header .ver{color:var(--mute);font-size:13px}
+header .link{margin-left:auto;font-size:13px;color:var(--mute);text-align:right}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+@media (max-width:760px){.row{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);font-weight:600}
+.code{font:600 20px var(--mono);letter-spacing:1px;user-select:all}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
+.kv dt{color:var(--mute)}.kv dd{margin:0;font-family:var(--mono);word-break:break-all}
+input[type=text]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+button{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.inline{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.inline input{flex:1;min-width:160px}
+.muted{color:var(--mute);font-size:13px}
+.list{display:flex;flex-direction:column;gap:10px}
+.intg{display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:center}
+.intg .name{font-weight:600;font-size:16px}
+.intg .meta{color:var(--mute);font-size:13px;display:flex;gap:10px;flex-wrap:wrap}
+.intg .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:640px){.intg{grid-template-columns:1fr}.intg .actions{justify-content:flex-start}}
+.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);font-weight:600}
+.s-running{color:var(--ok)}.s-starting,.s-installing{color:var(--warn)}.s-crashed,.s-error{color:var(--bad)}.s-stopped{color:var(--mute)}
+.upd{color:var(--accent)}
+.empty{text-align:center;padding:30px;color:var(--mute)}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);width:min(900px,94vw);padding:0}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog header{position:static;border-radius:12px 12px 0 0}
+dialog .body{padding:14px 16px}
+pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;height:min(60vh,520px);overflow:auto;font:12px/1.5 var(--mono);white-space:pre-wrap;margin:0}
+label.f{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+textarea{width:100%;min-height:90px;font:12px var(--mono);padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pegasis Hub</h1><span class="ver" id="ver"></span>
+  <div class="link" id="linkState">…</div>
+</header>
+<main>
+  <div class="row">
+    <section class="card">
+      <h2>Pair a remote</h2>
+      <p class="muted" style="margin-top:0">Install <b>Pegasis Bridge</b> on the remote, start its setup and enter:</p>
+      <dl class="kv">
+        <dt>Hub address</dt><dd id="pairAddr"></dd>
+        <dt>Pairing code</dt><dd class="code" id="pairCode"></dd>
+      </dl>
+      <div class="inline"><button id="regen">New pairing code</button></div>
+    </section>
+    <section class="card">
+      <h2>Add an integration</h2>
+      <div class="muted">GitHub repository (newest release is used; add a tag or branch to pin one)</div>
+      <div class="inline">
+        <input type="text" id="gitUrl" placeholder="https://github.com/owner/uc-intg-something">
+        <input type="text" id="gitRef" placeholder="tag / branch (optional)" style="flex:.45">
+        <button class="primary" id="installGit">Install</button>
+      </div>
+      <div class="muted" style="margin-top:12px">or a custom-integration archive (.tar.gz)</div>
+      <div class="inline"><input type="file" id="archive" accept=".gz,.tgz"><button id="installArchive">Upload</button></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h2 style="margin:0">Integrations</h2>
+      <button id="checkUpd" style="margin-left:auto">Check for updates</button>
+    </div>
+    <div class="list" id="list"><div class="empty">Loading…</div></div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <header><h1 id="dlgTitle" style="font-size:16px"></h1><button style="margin-left:auto" onclick="dlg.close()">Close</button></header>
+  <div class="body" id="dlgBody"></div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+async function call(method, path, body, raw) {
+  const opt = { method, headers: {} };
+  if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
+  else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+  const r = await fetch("/api" + path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? s + " s" : s < 3600 ? Math.round(s / 60) + " min" : Math.round(s / 3600) + " h"; };
+
+let items = [];
+async function refresh() {
+  try {
+    const st = await call("GET", "/status");
+    $("ver").textContent = "v" + st.version + " · " + st.arch;
+    $("pairAddr").textContent = location.hostname + ":" + st.pairing.port;
+    $("pairCode").textContent = st.pairing.token;
+    $("linkState").innerHTML = st.remotes.length
+      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open`).join("<br>")
+      : "No remote linked";
+    items = await call("GET", "/integrations");
+    render();
+  } catch (e) { $("linkState").textContent = "Hub not reachable: " + e.message; }
+}
+
+function render() {
+  const el = $("list");
+  if (!items.length) { el.innerHTML = '<div class="empty">Nothing installed yet. Add an integration above: it shows up on the remote by itself.</div>'; return; }
+  el.innerHTML = items.map((m) => {
+    const s = m.status.state, running = s === "running" || s === "starting";
+    const src = m.source?.type === "git" ? `${esc(m.source.url.replace(/^https:\/\/github.com\//, "").replace(/\.git$/, ""))}${m.source.ref ? " @ " + esc(m.source.ref) : ""}` : esc(m.source?.filename || m.source?.path || "");
+    return `<div class="card intg">
+      <div>
+        <div class="name">${esc(m.name)} <span class="chip s-${s}">${s}</span> ${m.latest ? `<span class="chip upd">${esc(m.latest)} available</span>` : ""}</div>
+        <div class="meta"><span>${esc(m.version)}</span><span>${esc(m.runtime)}</span><span>${m.shownAs?.length ? m.shownAs.map((r) => `on ${esc(r.remote)} as <code>${esc(r.id)}</code>`).join(", ") : `driver <code>${esc(m.driverId)}</code>`}</span><span>${src}</span>${m.status.restarts ? `<span>${m.status.restarts} restarts</span>` : ""}<span>${s} ${ago(m.status.since || Date.now())}</span></div>
+      </div>
+      <div class="actions">
+        ${running ? `<button data-a="stop" data-id="${m.id}">Stop</button>` : `<button data-a="start" data-id="${m.id}">Start</button>`}
+        <button data-a="restart" data-id="${m.id}">Restart</button>
+        ${m.source?.type === "git" ? `<button data-a="update" data-id="${m.id}">${m.latest ? "Update" : "Reinstall"}</button>` : ""}
+        <button data-a="logs" data-id="${m.id}">Logs</button>
+        <button data-a="settings" data-id="${m.id}">Settings</button>
+        <button data-a="remove" data-id="${m.id}" class="danger">Remove</button>
+      </div></div>`;
+  }).join("");
+}
+
+$("list").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button[data-a]"); if (!b) return;
+  const id = b.dataset.id, a = b.dataset.a, m = items.find((x) => x.id === id);
+  try {
+    if (a === "logs") return showLogs(m);
+    if (a === "settings") return showSettings(m);
+    if (a === "remove") {
+      if (!confirm(`Remove ${m.name}? It is also removed from every linked remote, with its devices and entities.`)) return;
+      await call("DELETE", "/integrations/" + id);
+    } else if (a === "update") { const j = await call("POST", `/integrations/${id}/update`); return followJob(j.job, "Updating " + m.name); }
+    else { b.disabled = true; await call("POST", `/integrations/${id}/${a}`); }
+  } catch (e) { alert(e.message); }
+  refresh();
+});
+
+let logTimer;
+function showLogs(m) {
+  $("dlgTitle").textContent = m.name + " — log";
+  $("dlgBody").innerHTML = '<pre class="log" id="logPre"></pre>';
+  dlg.showModal();
+  const load = async () => {
+    const pre = $("logPre"); if (!pre) return;
+    const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    const j = await call("GET", `/integrations/${m.id}/logs`).catch(() => ({ lines: [] }));
+    pre.textContent = j.lines.join("\n");
+    if (atEnd) pre.scrollTop = pre.scrollHeight;
+  };
+  load(); clearInterval(logTimer); logTimer = setInterval(load, 1500);
+}
+dlg.addEventListener("close", () => { clearInterval(logTimer); clearInterval(jobTimer); refresh(); });
+
+function showSettings(m) {
+  $("dlgTitle").textContent = m.name + " — settings";
+  $("dlgBody").innerHTML = `
+    <label><input type="checkbox" id="optAuto" ${m.autostart ? "checked" : ""}> Start with the hub</label>
+    <label class="f">Run command (empty = detected: <code>${esc(m.detectedCommand.join(" "))}</code>, in <code>${esc(m.cwd || ".")}</code>)</label>
+    <input type="text" id="optCmd" value="${esc(m.commandOverride ? m.commandOverride.join(" ") : "")}">
+    <label class="f">Extra environment variables (NAME=value per line)</label>
+    <textarea id="optEnv">${esc(Object.entries(m.env || {}).map(([k, v]) => k + "=" + v).join("\n"))}</textarea>
+    <p class="muted">Internal port ${m.port} · config kept in <code>integrations/${esc(m.id)}/config</code> across updates.</p>
+    <div class="inline"><button class="primary" id="optSave">Save and restart</button></div>`;
+  dlg.showModal();
+  $("optSave").onclick = async () => {
+    const env = Object.fromEntries($("optEnv").value.split("\n").map((l) => l.trim()).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1)]));
+    try {
+      await call("PATCH", "/integrations/" + m.id, { autostart: $("optAuto").checked, command: $("optCmd").value.trim(), env });
+      await call("POST", `/integrations/${m.id}/restart`);
+      dlg.close();
+    } catch (e) { alert(e.message); }
+  };
+}
+
+let jobTimer;
+function followJob(jobId, title) {
+  $("dlgTitle").textContent = title;
+  $("dlgBody").innerHTML = '<pre class="log" id="jobPre"></pre><p class="muted" id="jobState">Working…</p>';
+  dlg.showModal();
+  clearInterval(jobTimer);
+  jobTimer = setInterval(async () => {
+    const j = await call("GET", "/jobs/" + jobId).catch(() => null); if (!j || !$("jobPre")) return;
+    $("jobPre").textContent = j.lines.join("\n"); $("jobPre").scrollTop = 1e9;
+    if (j.state !== "running") {
+      clearInterval(jobTimer);
+      $("jobState").innerHTML = j.state === "done" ? `<b class="s-running">Done.</b> It appears on every linked remote under Integrations; open it there to run its setup.` : `<b class="s-error">Failed:</b> ${esc(j.error)}`;
+      refresh();
+    }
+  }, 700);
+}
+
+$("installGit").onclick = async () => {
+  const url = $("gitUrl").value.trim(); if (!url) return;
+  try { const j = await call("POST", "/integrations", { url, ref: $("gitRef").value.trim() }); followJob(j.job, "Installing " + url); $("gitUrl").value = ""; $("gitRef").value = ""; }
+  catch (e) { alert(e.message); }
+};
+$("installArchive").onclick = async () => {
+  const f = $("archive").files[0]; if (!f) return;
+  try { const j = await call("POST", "/integrations/upload?name=" + encodeURIComponent(f.name), undefined, f); followJob(j.job, "Installing " + f.name); }
+  catch (e) { alert(e.message); }
+};
+$("regen").onclick = async () => {
+  if (!confirm("Make a new pairing code? Linked remotes disconnect until their Bridge setup is run again with the new code.")) return;
+  await call("POST", "/pairing/regenerate"); refresh();
+};
+$("checkUpd").onclick = async (e) => { e.target.disabled = true; try { items = await call("POST", "/integrations/check-updates"); render(); } finally { e.target.disabled = false; } };
+
+refresh();
+setInterval(() => { if (!dlg.open) refresh(); }, 3000);
+</script>
+</body>
+</html>
