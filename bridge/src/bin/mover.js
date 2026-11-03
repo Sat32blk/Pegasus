@@ -294,7 +294,13 @@ export class Mover {
         return snap ? this.#restore(driverId, snap) : null;
       }
       const d = await this.remote().driver(driverId);
-      if (d?.driver_type === "CUSTOM" && snap) return this.#restore(driverId, snap);
+      if (d?.driver_type === "CUSTOM") {
+        // already installed on the remote again: put the references back, then finish like a move back
+        if (snap) await this.#restore(driverId, snap);
+        await this.#cleanupHub(driverId);
+        this.#step(driverId, "done", "back on the remote");
+        return;
+      }
       return this.#toRemote(driverId);
     };
     go()
@@ -367,9 +373,37 @@ export class Mover {
     }
 
     if (snap) await this.#restore(driverId, snap);
+    await this.#cleanupHub(driverId);
+    this.#step(driverId, "done", "back on the remote");
+  }
+
+  /** The last step of a move back: the hub removes its (stopped) copy. */
+  async #cleanupHub(driverId) {
+    const mv = this.state.moves[driverId];
+    if (!mv?.hubId) return;
     this.#step(driverId, "hub cleanup", "removing the hub copy");
     await this.link.call("move.finishBack", { hubId: mv.hubId }, 60000);
-    this.#step(driverId, "done", "back on the remote");
+    mv.hubCleaned = true;
+    this.save();
+  }
+
+  /**
+   * Finishes moves back that ended without removing the hub's copy (a Retry in Bridge 0.3.4 and
+   * older skipped that step). Called when the link to the hub comes up.
+   */
+  async reconcile() {
+    for (const [driverId, mv] of Object.entries(this.state.moves || {})) {
+      if (mv.dir !== "toRemote" || mv.status !== "done" || mv.hubCleaned || !mv.hubId || this.running.has(driverId)) continue;
+      try {
+        await this.link.call("move.finishBack", { hubId: mv.hubId }, 60000);
+        mv.hubCleaned = true;
+        mv.log = [...(mv.log || []), `${new Date().toTimeString().slice(0, 8)} removed the hub copy left behind`].slice(-40);
+        this.save();
+        this.log?.(`move ${driverId}: removed the hub copy left behind by an earlier move back`);
+      } catch (e) {
+        this.log?.(`move ${driverId}: could not remove the hub copy yet: ${e.message}`);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ stand-in archive

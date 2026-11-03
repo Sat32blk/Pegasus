@@ -248,11 +248,32 @@ try {
   console.log("  " + healed.log.slice(-4).join("\n  "));
   assert.equal(healed.status, "done", healed.error);
   assert.deepEqual(view(), before, "references differ after retrying the stuck move back");
+  assert.equal(hub.store.get("sim_node"), null, "the retried move back left the hub copy behind");
   console.log("  the entities the saved activities use were selected again, and every reference is back");
   {
     const { entityIdsOf } = await import("../bridge/src/bin/remote.js");
     assert.deepEqual(entityIdsOf({ ...oldSnap, configured: [], entities: [] }), ["sim_switch"], "references alone name the entity");
     console.log("  even with no entity list at all, the saved references name every entity to select");
+  }
+
+  step("a finished move back that left the hub copy behind (Bridge 0.3.4 Retry) is cleaned up when the link comes up");
+  {
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    // put a stopped hub copy back and mark the move the way 0.3.4 left it
+    const mv = mover.state.moves.sim_node;
+    const job = hub.mgr.install({ local: path.join(HERE, "fixtures", "sim-node"), hold: true, noStart: true });
+    await until(() => job.state !== "running", 300000, "hub copy");
+    mv.hubId = job.result.id;
+    delete mv.hubCleaned;
+    assert.ok(hub.store.get(mv.hubId), "hub copy present");
+    await mover.reconcile();
+    assert.equal(hub.store.get(mv.hubId), null, "hub copy not removed");
+    assert.equal(remote.drivers.get("sim_node")?.type, "CUSTOM", "the remote's own copy must stay");
+    assert.deepEqual(view(), before, "references changed by the cleanup");
+    console.log("  hub copy removed; the integration on the remote and every reference untouched");
   }
 
   step("the Bridge itself can't move; Remote Self-Control can");

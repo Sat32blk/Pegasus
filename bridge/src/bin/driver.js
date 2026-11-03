@@ -167,6 +167,7 @@ async function startLink() {
     if (state === "up") {
       resendBattery = true;
       scheduleReport();
+      setTimeout(() => mover?.reconcile().catch((e) => log(`reconcile: ${e.message}`)), 3000);
     }
     if (state !== "up") {
       tunnels.dropAll();
