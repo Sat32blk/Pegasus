@@ -39,7 +39,14 @@ export class RemoteOps {
   async integrations() {
     const drivers = await this.all("/intg/drivers");
     const instances = await this.all("/intg/instances");
-    return drivers.map((d) => {
+    // the list is a summary without home pages (firmware 2.x): read installed ones in full
+    const full = new Map(
+      await Promise.all(
+        drivers.filter((d) => d.driver_type === "CUSTOM" && !d.home_page).map(async (d) => [d.driver_id, await this.driver(d.driver_id).catch(() => null)])
+      )
+    );
+    return drivers.map((d0) => {
+      const d = { ...d0, ...(full.get(d0.driver_id) || {}) };
       const inst = instances.find((i) => i.driver_id === d.driver_id) || null;
       return {
         driver_id: d.driver_id,
@@ -47,7 +54,7 @@ export class RemoteOps {
         version: d.version || "",
         type: d.driver_type || "",
         state: d.driver_state || "",
-        developer: d.developer?.name || d.developer_name || "",
+        developer: d.developer?.name || (typeof d.developer === "string" ? d.developer : "") || d.developer_name || "",
         home_page: d.home_page || d.developer?.url || "",
         instance: inst ? { integration_id: inst.integration_id, name: text(inst.name), state: inst.device_state || "" } : null
       };

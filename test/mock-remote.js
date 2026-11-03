@@ -150,7 +150,8 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
         return send(code, out);
       }
       if (p[0] === "intg" && p[1] === "drivers") {
-        if (!p[2] && M === "GET") return send(200, paged([...drivers.keys()].map(driverView), url));
+        // like the real core, the list is a summary: no home_page, developer is just a name
+        if (!p[2] && M === "GET") return send(200, paged([...drivers.keys()].map(driverView).map(({ home_page, developer, setup_data_schema, ...rest }) => ({ ...rest, developer: developer?.name ?? developer ?? null })), url));
         if (!p[2] && M === "POST") {
           const b = body();
           for (const f of ["driver_url", "name", "version"]) if (!b[f]) return send(400, { message: `Missing field: ${f}` });
