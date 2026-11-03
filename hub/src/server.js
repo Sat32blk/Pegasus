@@ -73,6 +73,10 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         integrations: store.list().length
       });
     }
+    if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "log") {
+      const lines = link.bridgeLog(p[1]);
+      return lines ? send(res, 200, { lines }) : send(404, { error: "that remote is not linked" });
+    }
     if (m === "POST" && p[0] === "pairing" && p[1] === "regenerate") {
       const token = store.regenerateToken();
       link.disconnectAll(4003, "pairing code changed"); // bridges must re-pair

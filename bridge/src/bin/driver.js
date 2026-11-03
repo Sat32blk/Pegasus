@@ -21,7 +21,33 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DRIVER_JSON = fs.existsSync(path.join(HERE, "driver.json")) ? path.join(HERE, "driver.json") : path.join(HERE, "..", "driver.json");
 const VERSION = JSON.parse(fs.readFileSync(DRIVER_JSON, "utf8")).version;
 
-const log = (...a) => console.log("[pegasis]", ...a);
+// Recent log lines are also sent to the hub (shown on its page), because reading the remote's own
+// log needs the web-configurator login.
+const recentLog = [];
+const log = (...a) => {
+  console.log("[pegasis]", ...a);
+  recentLog.push(`${new Date().toISOString().slice(5, 19).replace("T", " ")} ${a.join(" ")}`);
+  if (recentLog.length > 150) recentLog.splice(0, recentLog.length - 150);
+  scheduleReport();
+};
+
+/** Tells the hub how things stand on this remote: IDs, problems, notes and recent log. */
+let reportTimer = null;
+function scheduleReport() {
+  if (reportTimer) return;
+  reportTimer = setTimeout(() => {
+    reportTimer = null;
+    if (!link?.up || !registrar) return;
+    const s = registrar.summary();
+    link.report({
+      registered: registrar.mapping(),
+      problems: Object.fromEntries(s.problems),
+      notes: Object.fromEntries(s.notes),
+      access: !!config?.apiKey,
+      log: recentLog.slice(-150)
+    });
+  }, 500);
+}
 
 const api = new uc.IntegrationAPI();
 let cfgFile;
@@ -125,10 +151,10 @@ async function startLink() {
     save: saveConfig,
     log,
     removeOnUninstall: () => config.removeOnUninstall !== false,
-    onChange: (registered) => link?.report({ registered })
+    onChange: () => scheduleReport()
   });
   link.on("state", (state) => {
-    if (state === "up") link.report({ registered: registrar.mapping() });
+    if (state === "up") scheduleReport();
     if (state !== "up") {
       tunnels.dropAll();
       publish(latencySensor, { state: uc.SensorStates.Unavailable });
@@ -136,7 +162,9 @@ async function startLink() {
     refreshStatus();
   });
   link.on("catalog", async (drivers, removed) => {
+    log(`hub lists ${drivers.length} integration(s): ${drivers.map((d) => `${d.driver_id || d.id} (${d.state})`).join(", ") || "none"}`);
     await registrar.sync(drivers, removed);
+    scheduleReport();
     refreshStatus();
   });
   link.on("rtt", publishRtt);

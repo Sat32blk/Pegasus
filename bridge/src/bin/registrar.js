@@ -119,7 +119,10 @@ export class Registrar {
       const hubId = d.id;
       try {
         const port = await this.#endpoint(hubId);
-        if (!core) continue;
+        if (!core) {
+          this.problems.set(hubId, "the Bridge has no access to the remote: run its setup again with the web-configurator PIN");
+          continue;
+        }
         const h = this.state.hosted[hubId];
         // the core fetches the driver's metadata while registering, so the driver must be up
         if (d.state !== "running") {
@@ -158,6 +161,7 @@ export class Registrar {
   }
 
   async #post(core, id, d, url) {
+    this.log(`${id}: registering with the remote at ${url}`);
     await core.post("/intg/drivers", {
       driver_id: id,
       driver_url: url,

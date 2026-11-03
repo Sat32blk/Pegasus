@@ -76,17 +76,28 @@ export class LinkServer {
     return { removed_ids: ids, removed: ids.map(remoteDriverId) };
   }
 
+  /** The Bridge's recent log for one remote (by name), or null. */
+  bridgeLog(remote) {
+    for (const l of this.links) if (l.ready && l.remote === remote) return l.bridgeLog || [];
+    return null;
+  }
+
   /** remote name -> the ID this integration has on that remote */
   shownAs(hubId) {
     const out = [];
-    for (const l of this.links) if (l.ready && l.registered?.[hubId]) out.push({ remote: l.remote, id: l.registered[hubId] });
+    for (const l of this.links) {
+      if (!l.ready) continue;
+      if (l.registered?.[hubId]) out.push({ remote: l.remote, id: l.registered[hubId], note: l.notes?.[hubId] || null });
+      else if (l.problems?.[hubId]) out.push({ remote: l.remote, id: null, problem: l.problems[hubId] });
+      else out.push({ remote: l.remote, id: null, problem: l.registered ? "waiting for the remote" : "Bridge older than 0.2.0" });
+    }
     return out;
   }
 
   status() {
     return [...this.links]
       .filter((l) => l.ready)
-      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null }));
+      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, problems: l.problems || {}, notes: l.notes || {} }));
   }
 
   #accept(ws, req) {
@@ -159,6 +170,10 @@ export class LinkServer {
       case T.STATUS: {
         const st = parseJson(payload) || {};
         if (st.registered && typeof st.registered === "object") link.registered = st.registered;
+        if (st.problems && typeof st.problems === "object") link.problems = st.problems;
+        if (st.notes && typeof st.notes === "object") link.notes = st.notes;
+        if (typeof st.access === "boolean") link.access = st.access;
+        if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => String(l).slice(0, 500));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
           link.standbySince = Date.now();

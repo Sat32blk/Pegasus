@@ -173,6 +173,12 @@ try {
   await until(() => hub.link.shownAs("sim_node")[0]?.id === "sim_node", 5000, "hub learns the remote ID");
   console.log(`  hub page: ${JSON.stringify(hub.link.shownAs("sim_node"))}`);
 
+  step("the Bridge's problems and log reach the hub page");
+  bridge.link.report({ registered: { sim_node: "sim_node", sim_python: "sim_python" }, problems: { other: "no access" }, access: true, log: ["hello from the bridge"] });
+  await until(() => hub.link.bridgeLog("test-remote")?.includes("hello from the bridge"), 3000, "bridge log on hub");
+  assert.equal(hub.link.status()[0].problems.other, "no access");
+  console.log("  bridge log and problems shown on the hub");
+
   step("the core talks to the hosted Node driver through the tunnel");
   const s = await coreSession(dn.driver_url);
   const ents = await s.req("get_available_entities");

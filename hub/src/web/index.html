@@ -114,7 +114,7 @@ async function refresh() {
     $("pairAddr").textContent = location.hostname + ":" + st.pairing.port;
     $("pairCode").textContent = st.pairing.token;
     $("linkState").innerHTML = st.remotes.length
-      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open`).join("<br>")
+      ? st.remotes.map((r) => `<b>${esc(r.remote)}</b> ${r.standby ? "asleep" : "linked · " + (r.rttMs != null ? r.rttMs.toFixed(1) + " ms" : "…")} · ${r.sessions} open${r.access === false ? ` · <span class="s-error">no access: rerun Bridge setup</span>` : ""} · <a href="#" data-remote-log="${esc(r.remote)}">Bridge log</a>`).join("<br>")
       : "No remote linked";
     items = await call("GET", "/integrations");
     render();
@@ -130,7 +130,10 @@ function render() {
     return `<div class="card intg">
       <div>
         <div class="name">${esc(m.name)} <span class="chip s-${s}">${s}</span> ${m.latest ? `<span class="chip upd">${esc(m.latest)} available</span>` : ""}</div>
-        <div class="meta"><span>${esc(m.version)}</span><span>${esc(m.runtime)}</span><span>${m.shownAs?.length ? m.shownAs.map((r) => `on ${esc(r.remote)} as <code>${esc(r.id)}</code>`).join(", ") : `driver <code>${esc(m.driverId)}</code>`}</span><span>${src}</span>${m.status.restarts ? `<span>${m.status.restarts} restarts</span>` : ""}<span>${s} ${ago(m.status.since || Date.now())}</span></div>
+        <div class="meta"><span>${esc(m.version)}</span><span>${esc(m.runtime)}</span><span>driver <code>${esc(m.driverId)}</code></span><span>${src}</span>${m.status.restarts ? `<span>${m.status.restarts} restarts</span>` : ""}<span>${s} ${ago(m.status.since || Date.now())}</span></div>
+        ${(m.shownAs || []).map((r) => r.id
+          ? `<div class="meta"><span class="s-running">✓ on ${esc(r.remote)} as <code>${esc(r.id)}</code></span>${r.note ? `<span>${esc(r.note)}</span>` : ""}</div>`
+          : `<div class="meta"><span class="s-error">✗ not on ${esc(r.remote)}: ${esc(r.problem)}</span></div>`).join("")}
       </div>
       <div class="actions">
         ${running ? `<button data-a="stop" data-id="${m.id}">Stop</button>` : `<button data-a="start" data-id="${m.id}">Start</button>`}
@@ -156,6 +159,22 @@ $("list").addEventListener("click", async (ev) => {
     else { b.disabled = true; await call("POST", `/integrations/${id}/${a}`); }
   } catch (e) { alert(e.message); }
   refresh();
+});
+
+$("linkState").addEventListener("click", (ev) => {
+  const a = ev.target.closest("[data-remote-log]"); if (!a) return;
+  ev.preventDefault();
+  const remote = a.dataset.remoteLog;
+  $("dlgTitle").textContent = "Pegasis Bridge on " + remote;
+  $("dlgBody").innerHTML = '<pre class="log" id="logPre"></pre>';
+  dlg.showModal();
+  const load = async () => {
+    const pre = $("logPre"); if (!pre) return;
+    const j = await call("GET", "/remotes/" + encodeURIComponent(remote) + "/log").catch((e) => ({ lines: [e.message] }));
+    pre.textContent = j.lines.length ? j.lines.join("\n") : "(nothing yet: Bridge 0.2.1 or newer sends its log here)";
+    pre.scrollTop = pre.scrollHeight;
+  };
+  load(); clearInterval(logTimer); logTimer = setInterval(load, 2000);
 });
 
 let logTimer;
