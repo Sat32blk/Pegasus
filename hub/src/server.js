@@ -31,6 +31,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const say = quiet ? () => {} : log;
   const store = new Store(dataDir);
   const sup = new Supervisor({ store, log: say });
+  const scrubbed = sup.scrubLogs();
+  if (scrubbed) say(`masked API keys, passwords and tokens in ${scrubbed} older log file(s)`);
   const mgr = new Manager({ store, supervisor: sup, log: say });
   const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say });
 

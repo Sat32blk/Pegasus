@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { portOpen, sleep } from "./util.js";
+import { redact } from "./redact.js";
 
 const LOG_LINES = 800;
 const LOG_FILE_MAX = 2 * 1024 * 1024;
@@ -48,7 +49,7 @@ export class Supervisor extends EventEmitter {
 
   #line(id, text, stream = "out") {
     const p = this.#entry(id);
-    const line = `${new Date().toISOString().slice(11, 23)} ${stream === "err" ? "!" : " "} ${text}`;
+    const line = `${new Date().toISOString().slice(11, 23)} ${stream === "err" ? "!" : " "} ${redact(text)}`;
     p.lines.push(line);
     if (p.lines.length > LOG_LINES) p.lines.splice(0, p.lines.length - LOG_LINES);
     const f = this.store.logFile(id);
@@ -188,6 +189,28 @@ export class Supervisor extends EventEmitter {
     this.procs.delete(id);
   }
 
+  /** Masks secrets in log files written before masking existed (or by an older hub). */
+  scrubLogs() {
+    let n = 0;
+    for (const meta of this.store.list()) {
+      for (const f of [this.store.logFile(meta.id), this.store.logFile(meta.id) + ".1"]) {
+        try {
+          if (!fs.existsSync(f)) continue;
+          const before = fs.readFileSync(f, "utf8");
+          const after = before.split("\n").map(redact).join("\n");
+          if (after !== before) {
+            fs.writeFileSync(f + ".tmp", after);
+            fs.renameSync(f + ".tmp", f);
+            n++;
+          }
+        } catch {
+          /* a log file we can't clean is left for the next start */
+        }
+      }
+    }
+    return n;
+  }
+
   async stopAll() {
     await Promise.all([...this.procs.keys()].map((id) => this.stop(id, { quiet: true })));
   }
@@ -195,7 +218,7 @@ export class Supervisor extends EventEmitter {
 
 function readTail(file) {
   try {
-    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).slice(-LOG_LINES);
+    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).slice(-LOG_LINES).map(redact);
   } catch {
     return [];
   }

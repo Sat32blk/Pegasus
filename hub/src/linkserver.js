@@ -4,6 +4,7 @@
 
 import crypto from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
+import { redact } from "./redact.js";
 import { T, PROTO_VERSION, pingPayload, pingTime, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
 
 const HELLO_TIMEOUT_MS = 5000;
@@ -173,7 +174,7 @@ export class LinkServer {
         if (st.problems && typeof st.problems === "object") link.problems = st.problems;
         if (st.notes && typeof st.notes === "object") link.notes = st.notes;
         if (typeof st.access === "boolean") link.access = st.access;
-        if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => String(l).slice(0, 500));
+        if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
           link.standbySince = Date.now();
