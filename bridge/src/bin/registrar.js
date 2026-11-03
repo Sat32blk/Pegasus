@@ -61,6 +61,16 @@ export class Registrar {
     this.log(`settings from an older Bridge carried over (${Object.keys(this.state.hosted).length} integrations keep their IDs)`);
   }
 
+  /** Forgets a registration that a move removed on purpose (so it isn't added back). */
+  forget(hubId) {
+    const h = this.state.hosted[hubId];
+    if (h?.remoteId) {
+      delete h.remoteId;
+      this.save();
+      this.onChange(this.mapping());
+    }
+  }
+
   /** hubId -> remoteId for everything registered on this remote. */
   mapping() {
     return Object.fromEntries(Object.entries(this.state.hosted).filter(([, h]) => h.remoteId).map(([id, h]) => [id, h.remoteId]));
@@ -126,6 +136,12 @@ export class Registrar {
           continue;
         }
         const h = this.state.hosted[hubId];
+        // held back by the hub while it moves (to or from the remote): endpoint only, no registration
+        if (d.hold) {
+          this.problems.delete(hubId);
+          this.notes.set(hubId, "moving");
+          continue;
+        }
         // the core fetches the driver's metadata while registering, so the driver must be up
         if (d.state !== "running") {
           if (!h.remoteId) this.problems.set(hubId, `${d.name} is ${d.state} on the hub`);

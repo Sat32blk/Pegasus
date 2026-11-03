@@ -79,6 +79,9 @@ export class Store {
   configDir(id) {
     return path.join(this.intgDir, id, "config");
   }
+  dataDirOf(id) {
+    return path.join(this.intgDir, id, "data");
+  }
   logFile(id) {
     return path.join(this.intgDir, id, "driver.log");
   }

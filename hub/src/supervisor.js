@@ -85,7 +85,9 @@ export class Supervisor extends EventEmitter {
       ...process.env,
       ...(meta.env || {}),
       UC_CONFIG_HOME: this.store.configDir(id),
-      UC_DATA_HOME: this.store.configDir(id),
+      // integrations installed by hub 0.3+ get their own data folder, like on the remote
+      UC_DATA_HOME: meta.ownDataDir ? this.store.dataDirOf(id) : this.store.configDir(id),
+      STATE_DIRECTORY: meta.ownDataDir ? this.store.dataDirOf(id) : this.store.configDir(id),
       UC_INTEGRATION_INTERFACE: "127.0.0.1",
       UC_INTEGRATION_HTTP_PORT: String(meta.port),
       UC_DISABLE_MDNS_PUBLISH: "true",
@@ -94,6 +96,7 @@ export class Supervisor extends EventEmitter {
       HOME: this.store.configDir(id)
     };
     fs.mkdirSync(env.UC_CONFIG_HOME, { recursive: true });
+    fs.mkdirSync(env.UC_DATA_HOME, { recursive: true });
     this.#set(id, "starting");
     this.note(id, `starting: ${[cmd, ...args].join(" ")} (port ${meta.port})`);
     let child;

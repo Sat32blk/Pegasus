@@ -15,6 +15,7 @@ import { Supervisor } from "./supervisor.js";
 import { Manager } from "./manager.js";
 import { LinkServer } from "./linkserver.js";
 import { BatteryStore, summarize } from "./battery.js";
+import { registerMoveHandlers } from "./moves.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
 
@@ -28,7 +29,7 @@ const UPDATE_CHECK_MS = 6 * 3600 * 1000;
 
 const log = (...a) => console.log(new Date().toISOString(), "[hub]", ...a);
 
-export async function startHub({ port = PORT, dataDir = DATA, password = PASSWORD, quiet = false } = {}) {
+export async function startHub({ port = PORT, dataDir = DATA, password = PASSWORD, quiet = false, moveSources } = {}) {
   const say = quiet ? () => {} : log;
   const store = new Store(dataDir);
   const sup = new Supervisor({ store, log: say });
@@ -37,6 +38,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const mgr = new Manager({ store, supervisor: sup, log: say });
   const battery = new BatteryStore(dataDir);
   const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery });
+
+  registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
 
   sup.on("change", (id, state) => {
     if (state === "crashed" || state === "stopped") link.dropDriver(id);
@@ -88,6 +91,16 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         summary: summarize(all, { from }),
         previous: summarize(all, { from: from - days * 24 * 3600 * 1000, to: from })
       });
+    }
+    if (p[0] === "remotes" && p[1] && p[2] === "integrations" && m === "GET") {
+      return send(res, 200, await link.call(p[1], "remote.integrations", {}, 30000));
+    }
+    if (p[0] === "remotes" && p[1] && p[2] === "move" && m === "POST") {
+      const b = JSON.parse((await readBody(req, 16 * 1024)).toString() || "{}");
+      const driverId = String(b.driverId || "");
+      if (!driverId) throw new InstallError("driverId missing");
+      const method = b.retry ? "move.retry" : b.to === "remote" ? "move.toRemote" : "move.toHub";
+      return send(res, 202, await link.call(p[1], method, { driverId, keepSlot: !!b.keepSlot }, 30000));
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "log") {
       const lines = link.bridgeLog(p[1]);

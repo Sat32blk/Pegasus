@@ -17,6 +17,7 @@ import { LinkClient } from "./link.js";
 import { Tunnels } from "./tunnels.js";
 import { Registrar } from "./registrar.js";
 import { BatteryTracker } from "./battery.js";
+import { Mover } from "./mover.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DRIVER_JSON = fs.existsSync(path.join(HERE, "driver.json")) ? path.join(HERE, "driver.json") : path.join(HERE, "..", "driver.json");
@@ -48,6 +49,7 @@ function scheduleReport() {
       problems: Object.fromEntries(s.problems),
       notes: Object.fromEntries(s.notes),
       access: !!config?.apiKey,
+      moves: mover ? mover.summary() : {},
       log: recentLog.slice(-150)
     });
     battery?.markSent(batt);
@@ -63,6 +65,7 @@ let link = null;
 let tunnels = null;
 let registrar = null;
 let battery = null;
+let mover = null;
 
 function loadConfig() {
   try {
@@ -178,6 +181,25 @@ async function startLink() {
     refreshStatus();
   });
   link.on("rtt", publishRtt);
+  mover = new Mover({
+    getCore: () => core,
+    link,
+    registrar,
+    tunnels,
+    state: config.state,
+    save: saveConfig,
+    log,
+    binDir: HERE,
+    dir: path.join(api.getConfigDirPath(), "moves"),
+    onChange: () => scheduleReport()
+  });
+  await mover.startControl().catch((e) => log(`move control endpoint: ${e.message}`));
+  // requests from the hub page
+  link.handle("remote.integrations", () => mover.integrations());
+  link.handle("move.toHub", ({ driverId, keepSlot }) => mover.toHub(String(driverId), { keepSlot: !!keepSlot }));
+  link.handle("move.toRemote", ({ driverId }) => mover.toRemote(String(driverId)));
+  link.handle("move.retry", ({ driverId }) => mover.retry(String(driverId)));
+  link.handle("move.status", () => mover.summary());
   await registrar.restore();
   link.start();
   battery?.start();
@@ -186,6 +208,7 @@ async function startLink() {
 
 async function stopLink() {
   battery?.stop();
+  mover?.stopControl();
   link?.stop();
   link = null;
   await tunnels?.closeAll();

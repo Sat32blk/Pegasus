@@ -44,7 +44,7 @@ export class Manager extends EventEmitter {
         else if (req.archive) fetched = await this.installer.fetchArchive(req.archive, req.filename, log);
         else if (req.local) fetched = await this.installer.fetchLocal(req.local, log);
         else throw new InstallError("Nothing to install");
-        job.result = await this.#commit(fetched, log);
+        job.result = await this.#commit(fetched, log, req);
         job.state = "done";
         log(`done: ${job.result.name} ${job.result.version} is ${job.result.updated ? "updated" : "installed"}`);
       } catch (e) {
@@ -67,7 +67,7 @@ export class Manager extends EventEmitter {
     return this.install({ git: meta.source.url, ref });
   }
 
-  async #commit(fetched, log) {
+  async #commit(fetched, log, opts = {}) {
     const prep = await this.installer.prepare(fetched.dir, log);
     const id = prep.id;
     if (this.busy.has(id)) throw new InstallError(`${id} is already being installed`);
@@ -111,6 +111,8 @@ export class Manager extends EventEmitter {
         port: old?.port || this.store.freePort(),
         env: old?.env || {},
         autostart: old ? old.autostart : true,
+        hold: opts.hold ? true : old?.hold || false,
+        ownDataDir: old ? !!old.ownDataDir : true,
         source: fetched.source,
         installedAt: old?.installedAt || Date.now(),
         updatedAt: Date.now(),
@@ -118,7 +120,10 @@ export class Manager extends EventEmitter {
       };
       this.store.put(meta);
       this.emit("changed");
-      if (meta.autostart || wasRunning) await this.sup.start(id);
+      if (opts.expectDriverId && meta.driverId !== opts.expectDriverId) {
+        throw new InstallError(`that repository holds ${meta.driverId}, not ${opts.expectDriverId}`);
+      }
+      if (!opts.noStart && (meta.autostart || wasRunning)) await this.sup.start(id);
       return { id, name: meta.name, version: meta.version, updated: !!old };
     } finally {
       this.busy.delete(id);

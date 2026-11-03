@@ -5,6 +5,7 @@
 import crypto from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { redact } from "./redact.js";
+import { Rpc } from "./linkproto.js";
 import { T, PROTO_VERSION, pingPayload, pingTime, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
 
 const HELLO_TIMEOUT_MS = 5000;
@@ -19,6 +20,7 @@ export class LinkServer {
     this.log = log;
     this.links = new Set();
     this.wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 64 * 1024 * 1024 });
+    this.rpcHandlers = new Map(); // requests from bridges: handle(method, async (params, link) => result)
     this.wss.on("connection", (ws, req) => this.#accept(ws, req));
     this.catalogTimer = null;
     // Measure each link's round trip (shown on the page) and drop links that stopped answering.
@@ -43,6 +45,23 @@ export class LinkServer {
     this.pingTimer.unref?.();
   }
 
+  handle(method, fn) {
+    this.rpcHandlers.set(method, fn);
+  }
+
+  /** The ready link of a remote (by name), or null. */
+  linkOf(remote) {
+    for (const l of this.links) if (l.ready && l.remote === remote) return l;
+    return null;
+  }
+
+  /** Asks a remote's Bridge something. */
+  call(remote, method, params, timeoutMs) {
+    const l = this.linkOf(remote);
+    if (!l) return Promise.reject(new Error(`${remote} is not linked`));
+    return l.rpc.call(method, params, timeoutMs);
+  }
+
   handleUpgrade(req, socket, head) {
     socket.setNoDelay?.(true);
     this.wss.handleUpgrade(req, socket, head, (ws) => this.wss.emit("connection", ws, req));
@@ -58,7 +77,8 @@ export class LinkServer {
         name: m.name,
         version: m.version,
         icon: m.icon,
-        state: s.state
+        state: s.state,
+        hold: !!m.hold
       };
     });
   }
@@ -99,7 +119,7 @@ export class LinkServer {
   status() {
     return [...this.links]
       .filter((l) => l.ready)
-      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, problems: l.problems || {}, notes: l.notes || {} }));
+      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, problems: l.problems || {}, notes: l.notes || {}, moves: l.moves || {} }));
   }
 
   #accept(ws, req) {
@@ -113,6 +133,7 @@ export class LinkServer {
       bridge: null,
       rttMs: null
     };
+    link.rpc = new Rpc((frame) => ws.readyState === WebSocket.OPEN && ws.send(frame), this.rpcHandlers);
     this.links.add(link);
     const helloTimer = setTimeout(() => ws.close(4001, "no hello"), HELLO_TIMEOUT_MS);
 
@@ -150,6 +171,7 @@ export class LinkServer {
     });
 
     ws.on("close", () => {
+      link.rpc.failAll("remote link lost");
       clearTimeout(helloTimer);
       this.links.delete(link);
       for (const [ch, s] of link.sessions) this.#endSession(link, ch, s, 1001, "link closed", false);
@@ -160,6 +182,7 @@ export class LinkServer {
 
   #frame(link, f) {
     const { type, channel, payload } = f;
+    if (link.rpc.onFrame(type, payload, link)) return;
     switch (type) {
       case T.PING:
         link.ws.send(encode(T.PONG, 0, payload));
@@ -175,6 +198,7 @@ export class LinkServer {
         if (st.problems && typeof st.problems === "object") link.problems = st.problems;
         if (st.notes && typeof st.notes === "object") link.notes = st.notes;
         if (typeof st.access === "boolean") link.access = st.access;
+        if (st.moves && typeof st.moves === "object") link.moves = st.moves;
         if (Array.isArray(st.battery) && st.battery.length && this.battery) this.battery.add(link.remote, st.battery.slice(-5000));
         if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {

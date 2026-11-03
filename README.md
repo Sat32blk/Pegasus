@@ -45,6 +45,22 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file).
 - The Bridge uses the web-configurator PIN once, to create an API key (named "Pegasis Bridge <date>"). The PIN is not stored.
 - Hosted drivers listen only on 127.0.0.1 inside the container. The link needs the pairing code, compared in constant time.
 
+## Moving integrations between the remote and the hub
+
+Install integrations the normal way (web configurator or Integration Manager), then move them. The hub page lists each linked remote's integrations with **Move to hub** / **Move back to remote**, and how many of the remote's 10 install slots are used.
+
+**To the hub** (the Bridge runs the remote's side, the hub its own):
+1. The hub installs the **same version** from the integration's GitHub, held back from the remote.
+2. Everything that uses its entities is saved: activities (included entities, on/off sequences, buttons, pages, touch slider, voice), macros, home-screen pages and groups, entity names and icons. A copy is kept on the remote and on the hub.
+3. The installed copy is updated in place with a small **stand-in** (same ID, name and version; the remote keeps its config files on an update). The stand-in hands those files over and passes the remote's traffic to the hub copy, which starts with them.
+4. **Free the slot**: the installed copy is removed and the hub copy registered under the **same ID**, its instance created again with the same entities, every saved reference put back, and the result counted against the snapshot.
+
+Or keep the slot: the stand-in stays and the integration runs on the hub through it; nothing is removed.
+
+**Back to the remote**: the hub downloads the integration's release for the remote (a `.tar.gz` from its GitHub release, preferring aarch64) and packs its current settings into it; the Bridge saves the references, removes the hub registration (or the stand-in), installs the archive, recreates the instance and puts everything back.
+
+**If a step fails** the move stops where it is, keeps its snapshot, and the page offers **Retry**, which continues from the right step. Integrations that control the remote itself (Self-Control, the Bridge) can't move. Make a backup in the web configurator before the first move.
+
 ## Install
 
 ### 1. The hub (Docker)
@@ -108,7 +124,7 @@ The Bridge also adds three entities: **Pegasis Hub link** (status text), **Pegas
 
 ```sh
 npm install && (cd hub && npm install) && (cd bridge/src/bin && npm install)
-npm test        # codec test + end-to-end test (mock core ⇄ bridge ⇄ hub ⇄ real Node and Python drivers)
+npm test        # codec, log masking, battery, ID rules, moves (stand-in remote), end-to-end (mock core ⇄ bridge ⇄ hub ⇄ real Node and Python drivers)
 npm run sync-proto   # after editing shared/linkproto.js
 ```
 

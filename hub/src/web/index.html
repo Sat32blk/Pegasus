@@ -40,6 +40,13 @@ button:disabled{opacity:.5;cursor:default}
 .s-running{color:var(--ok)}.s-starting,.s-installing{color:var(--warn)}.s-crashed,.s-error{color:var(--bad)}.s-stopped{color:var(--mute)}
 .upd{color:var(--accent)}
 .empty{text-align:center;padding:30px;color:var(--mute)}
+.rlist{display:flex;flex-direction:column;gap:2px}
+.rrow{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:10px 4px;border-top:1px solid var(--line)}
+.rrow:first-child{border-top:0}
+.rrow .why{color:var(--mute);font-size:13px}
+.mv{margin-top:6px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.mv pre{margin:6px 0 0;font:12px/1.5 var(--mono);white-space:pre-wrap;color:var(--mute)}
+section.card+section.card,#remoteSections section{margin-top:16px}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);width:min(900px,94vw);padding:0}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog header{position:static;border-radius:12px 12px 0 0}
@@ -85,6 +92,8 @@ textarea{width:100%;min-height:90px;font:12px var(--mono);padding:8px;border:1px
     </div>
     <div class="list" id="list"><div class="empty">Loading…</div></div>
   </section>
+
+  <div id="remoteSections"></div>
 </main>
 
 <dialog id="dlg">
@@ -118,7 +127,90 @@ async function refresh() {
       : "No remote linked";
     items = await call("GET", "/integrations");
     render();
+    remotesNow = st.remotes;
+    renderRemotes();
   } catch (e) { $("linkState").textContent = "Hub not reachable: " + e.message; }
+}
+
+// ---- each linked remote: its integrations, with Move to hub / Move back
+let remotesNow = [];
+const remoteLists = {};
+const remoteLoaded = {};
+async function loadRemote(name, force, every = 20000) {
+  if (!force && remoteLoaded[name] && Date.now() - remoteLoaded[name] < every) return;
+  remoteLoaded[name] = Date.now();
+  try { remoteLists[name] = await call("GET", `/remotes/${encodeURIComponent(name)}/integrations`); }
+  catch (e) { remoteLists[name] = { error: e.message }; }
+  renderRemotes();
+}
+const TYPE = { CUSTOM: "installed on the remote", EXTERNAL: "external", LOCAL: "built in" };
+function renderRemotes() {
+  const el = $("remoteSections");
+  el.innerHTML = remotesNow.map((r) => {
+    const moves = r.moves || {};
+    const busy = Object.values(moves).some((m) => m.status === "running" || Date.now() - m.updated < 30000);
+    loadRemote(r.remote, false, busy ? 3000 : 20000);
+    const list = remoteLists[r.remote];
+    const fromHub = new Set(items.flatMap((m) => (m.shownAs || []).filter((x) => x.remote === r.remote && x.id).map((x) => x.id)));
+    const standIns = new Set(Object.entries(moves).filter(([, m]) => m.dir === "toHub" && m.status === "done" && m.log.some((l) => /slot is kept/.test(l))).map(([id]) => id));
+    const used = list && !list.error ? list.filter((i) => i.type === "CUSTOM").length : null;
+    const rows = !list ? '<div class="muted">Loading…</div>' : list.error ? `<div class="s-error">${esc(list.error)}</div>` : list
+      .filter((i) => i.type !== "LOCAL" || i.instance)
+      .sort((a, b) => (a.type === "CUSTOM" ? 0 : 1) - (b.type === "CUSTOM" ? 0 : 1) || a.name.localeCompare(b.name))
+      .map((i) => {
+        const mv = moves[i.driver_id];
+        const onHub = fromHub.has(i.driver_id) || standIns.has(i.driver_id);
+        let action = "";
+        if (mv?.status === "running") action = `<span class="chip s-starting">moving · ${esc(mv.step)}</span>`;
+        else if (mv?.status === "failed") action = `<button data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Retry</button>`;
+        else if (onHub) action = `<button data-mv-back="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Move back to remote</button>`;
+        else if (i.movable) action = `<button class="primary" data-mv-hub="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move to hub</button>`;
+        const kind = onHub ? (standIns.has(i.driver_id) ? "runs on the hub (through its stand-in)" : "runs on the hub") : TYPE[i.type] || i.type;
+        const why = !onHub && !i.movable && i.why ? ` · ${esc(i.why)}` : "";
+        const progress = mv && (mv.status !== "done" || Date.now() - mv.updated < 120000)
+          ? `<div class="mv"><b class="${mv.status === "failed" ? "s-error" : mv.status === "done" ? "s-running" : "s-starting"}">${mv.status === "failed" ? "Stopped" : mv.status === "done" ? "Done" : "Moving"}</b> ${mv.dir === "toHub" ? "to the hub" : "back to the remote"}${mv.error ? `: ${esc(mv.error)}` : ""}<pre>${esc(mv.log.slice(-6).join("\n"))}</pre></div>` : "";
+        return `<div class="rrow"><div><b>${esc(i.name)}</b> <span class="muted">${esc(i.version)}</span><div class="why">${esc(kind)}${why}</div>${progress}</div><div>${action}</div></div>`;
+      }).join("");
+    return `<section class="card"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">On ${esc(r.remote)}</h2>
+      <span class="muted">${used == null ? "" : `${used} of 10 install slots used`}</span>
+      <button style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div><div class="rlist">${rows}</div></section>`;
+  }).join("");
+}
+$("remoteSections").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const remote = b.dataset.remote || b.dataset.reload;
+  try {
+    if (b.dataset.reload) return loadRemote(remote, true);
+    if (b.dataset.mvHub) return confirmMove(remote, b.dataset.mvHub, b.dataset.name);
+    if (b.dataset.mvBack) {
+      if (!confirm(`Move ${b.dataset.mvBack} back onto the remote?\n\nIt needs a free install slot. Its buttons disappear for a few seconds while it's reinstalled, then everything is put back.`)) return;
+      await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvBack, to: "remote" });
+    }
+    if (b.dataset.mvRetry) await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvRetry, retry: true });
+    setTimeout(() => loadRemote(remote, true), 1500);
+    refresh();
+  } catch (e) { alert(e.message); }
+});
+function confirmMove(remote, driverId, name) {
+  $("dlgTitle").textContent = `Move ${name} to the hub`;
+  $("dlgBody").innerHTML = `
+    <p style="margin-top:0">The hub installs the same version, takes over its settings and runs it. It stays under Integrations on <b>${esc(remote)}</b> with the same ID, devices and entities.</p>
+    <ol class="muted" style="padding-left:18px">
+      <li>Every place it's used is saved first: activities (entities, sequences, buttons, pages), macros and the home screen.</li>
+      <li>To free its install slot it's removed from the remote and added back from the hub. <b>Its buttons are missing for a few seconds</b>, then everything saved is put back and checked.</li>
+      <li>If anything doesn't come back, the move stops, keeps what it saved, and offers Retry.</li>
+    </ol>
+    <p><b>Make a backup in the web configurator first</b> (Settings → Backup), at least before your first move.</p>
+    <label style="display:block;margin:10px 0"><input type="checkbox" id="keepSlot"> Keep its install slot instead (a small stand-in stays on the remote; nothing is removed)</label>
+    <div class="inline"><button class="primary" id="goMove">Move to hub</button><button onclick="dlg.close()">Cancel</button></div>`;
+  dlg.showModal();
+  $("goMove").onclick = async () => {
+    try {
+      await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId, keepSlot: $("keepSlot").checked });
+      dlg.close();
+      setTimeout(() => loadRemote(remote, true), 1500);
+    } catch (e) { alert(e.message); }
+  };
 }
 
 function render() {

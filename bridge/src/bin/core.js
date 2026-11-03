@@ -67,6 +67,33 @@ export class CoreClient {
     return this.request("DELETE", p);
   }
 
+  /** Uploads a file as multipart form data (field "file"), e.g. a custom-integration archive. */
+  async upload(path, buf, filename, timeoutMs = 180000) {
+    const form = new FormData();
+    form.append("file", new Blob([buf], { type: "application/gzip" }), filename);
+    const headers = { Accept: "application/json" };
+    const auth = this.#auth();
+    if (auth) headers.Authorization = auth;
+    let res;
+    try {
+      res = await fetch(this.base + path, { method: "POST", headers, body: form, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      throw new CoreError(`POST ${path}: ${e.message}`, 0, "unreachable");
+    }
+    const text = await res.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : undefined;
+    } catch {
+      data = text;
+    }
+    if (!res.ok) {
+      const detail = data && typeof data === "object" ? data.message || JSON.stringify(data) : text;
+      throw new CoreError(`POST ${path}: HTTP ${res.status} ${detail || ""}`.trim(), res.status, res.status === 401 || res.status === 403 ? "unauthorized" : "http");
+    }
+    return data;
+  }
+
   /** Creates an admin API key using the PIN. Returns the key string. */
   async createApiKey(name) {
     const res = await this.post("/auth/api_keys", {

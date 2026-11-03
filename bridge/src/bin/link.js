@@ -3,7 +3,7 @@
 
 import { EventEmitter } from "node:events";
 import { WebSocket } from "ws";
-import { T, PROTO_VERSION, encode, decode, json, parseJson, encodeClose, decodeClose, pingPayload, pingTime } from "./linkproto.js";
+import { T, PROTO_VERSION, encode, decode, json, parseJson, encodeClose, decodeClose, pingPayload, pingTime, Rpc } from "./linkproto.js";
 
 // awake: check in after 5 s of silence, give up after 15 s; standby: once a minute, give up after 3 min
 const AWAKE = { ping: 5000, dead: 15000 };
@@ -38,6 +38,19 @@ export class LinkClient extends EventEmitter {
     this.standby = false;
     this.lastHeard = 0;
     this.lastPing = 0;
+    this.rpcHandlers = new Map();
+    this.rpc = null;
+  }
+
+  /** Answers requests from the hub: handle("move.toHub", async (params) => result). */
+  handle(method, fn) {
+    this.rpcHandlers.set(method, fn);
+  }
+
+  /** Asks the hub something. Rejects if the link is down or drops. */
+  call(method, params, timeoutMs) {
+    if (!this.up || !this.rpc) return Promise.reject(new Error("hub not connected"));
+    return this.rpc.call(method, params, timeoutMs);
   }
 
   /** The remote went to sleep / woke up. */
@@ -123,8 +136,9 @@ export class LinkClient extends EventEmitter {
   #connect() {
     if (this.stopped) return;
     this.#setState("connecting");
-    const ws = new WebSocket(this.url(), { perMessageDeflate: false, handshakeTimeout: 5000 });
+    const ws = new WebSocket(this.url(), { perMessageDeflate: false, handshakeTimeout: 5000, maxPayload: 64 * 1024 * 1024 });
     this.ws = ws;
+    const rpc = new Rpc((frame) => ws.readyState === WebSocket.OPEN && ws.send(frame), this.rpcHandlers);
 
     ws.on("open", () => {
       ws._socket?.setNoDelay?.(true);
@@ -140,6 +154,7 @@ export class LinkClient extends EventEmitter {
         case T.WELCOME: {
           const w = parseJson(f.payload) || {};
           this.up = true;
+          this.rpc = rpc;
           this.retry = 0;
           this.hubInfo = { name: w.hub, version: w.version };
           this.log(`linked to ${w.hub} ${w.version} at ${this.url()}`);
@@ -170,11 +185,14 @@ export class LinkClient extends EventEmitter {
           return;
         }
         default:
+          if (rpc.onFrame(f.type, f.payload, this)) return;
           return this.#channelFrame(f);
       }
     });
 
     ws.on("close", () => {
+      rpc.failAll("hub link lost");
+      if (this.rpc === rpc) this.rpc = null;
       clearInterval(this.pingTimer);
       clearTimeout(this.wakeTimer);
       const wasUp = this.up;
