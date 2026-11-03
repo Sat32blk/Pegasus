@@ -209,13 +209,35 @@ export class RemoteOps {
     }
     if (!inst?.integration_id) throw new Error(`the remote did not create an instance for ${driverId}`);
     const ids = snapshot.configured || [];
-    if (ids.length) {
-      const prefix = snapshot.instanceId + ".";
-      // the endpoint takes the integration's own entity IDs; accept full IDs from older snapshots too
-      const own = ids.map((x) => (x.startsWith(prefix) ? x.slice(prefix.length) : x));
-      await this.core.post(`/intg/instances/${enc(inst.integration_id)}/entities`, own);
-    }
+    if (ids.length) await this.configureEntities(inst.integration_id, snapshot.instanceId, ids);
     return inst.integration_id;
+  }
+
+  /** Entity IDs (full: <instance>.<own id>) the remote has configured for an instance. */
+  async configuredOf(instanceId) {
+    const prefix = instanceId + ".";
+    return (await this.all("/entities")).map((e) => e.entity_id).filter((id) => id.startsWith(prefix));
+  }
+
+  /**
+   * Selects the entities again on a (new) instance and checks the remote really took them: the core
+   * wants full entity IDs, ignores ones it doesn't know yet, and only knows them once it has asked the
+   * driver, so ask it to, retry for a while, and stop with a clear error before anything else changes.
+   */
+  async configureEntities(instanceId, oldInstanceId, ids, { tries = 15, wait = 2000 } = {}) {
+    const own = ids.map((x) => (x.startsWith(oldInstanceId + ".") ? x.slice(oldInstanceId.length + 1) : x));
+    const want = own.map((x) => `${instanceId}.${x}`);
+    let missing = want;
+    for (let i = 0; i < tries; i++) {
+      // makes the core fetch the driver's entity list (needed right after the instance is created)
+      await this.core.get(`/intg/instances/${enc(instanceId)}/entities?filter=ALL&limit=100`).catch(() => null);
+      await this.core.post(`/intg/instances/${enc(instanceId)}/entities`, missing).catch(() => null);
+      const have = new Set(await this.configuredOf(instanceId));
+      missing = want.filter((x) => !have.has(x));
+      if (!missing.length) return;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+    throw new Error(`the remote did not take ${missing.length} of ${want.length} entities (${missing.map((x) => x.slice(instanceId.length + 1)).join(", ")}); is the device on and reachable from the hub?`);
   }
 
   async deleteDriver(id) {

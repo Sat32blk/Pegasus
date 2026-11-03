@@ -186,9 +186,11 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
         if (!p[3] && M === "GET") return send(200, (({ configured, ...i }) => i)(inst));
         if (p[3] === "entities" && M === "GET") return send(200, paged(inst.configured.map((e) => ({ entity_id: e })), url));
         if (p[3] === "entities" && M === "POST") {
-          for (const e of body() || []) {
+          // like the real core: full entity IDs only; anything else is ignored without an error
+          for (const full of body() || []) {
+            if (typeof full !== "string" || !full.startsWith(inst.integration_id + ".")) continue;
+            const e = full.slice(inst.integration_id.length + 1);
             if (!inst.configured.includes(e)) inst.configured.push(e);
-            const full = `${inst.integration_id}.${e}`;
             if (!entities.has(full)) entities.set(full, { entity_id: full, integration_id: inst.integration_id, name: { en: e }, entity_type: "switch" });
           }
           return send(200, []);
