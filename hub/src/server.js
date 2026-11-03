@@ -18,6 +18,7 @@ import { BatteryStore, summarize } from "./battery.js";
 import { registerMoveHandlers } from "./moves.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
+import { Resources, batteryComparison } from "./resources.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // PEGASIS_VERSION is set by the image build (release tag, or dev-<commit> for main-branch builds)
@@ -29,7 +30,7 @@ const UPDATE_CHECK_MS = 6 * 3600 * 1000;
 
 const log = (...a) => console.log(new Date().toISOString(), "[hub]", ...a);
 
-export async function startHub({ port = PORT, dataDir = DATA, password = PASSWORD, quiet = false, moveSources } = {}) {
+export async function startHub({ port = PORT, dataDir = DATA, password = PASSWORD, quiet = false, moveSources, fetchRemoteStatus } = {}) {
   const say = quiet ? () => {} : log;
   const store = new Store(dataDir);
   const sup = new Supervisor({ store, log: say });
@@ -40,6 +41,21 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery });
 
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
+  const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
+
+  /** When this remote's first integration finished moving to the hub (kept on the hub). */
+  function firstMoveAt(remote) {
+    const st = link.status().find((r) => r.remote === remote);
+    const seen = Object.values(st?.moves || {}).filter((m) => m.dir === "toHub" && m.status === "done" && m.started).map((m) => m.started);
+    store.hub.firstMoveAt ||= {};
+    const known = store.hub.firstMoveAt[remote];
+    const earliest = Math.min(known || Infinity, ...seen);
+    if (isFinite(earliest) && earliest !== known) {
+      store.hub.firstMoveAt[remote] = earliest;
+      store.saveHub();
+    }
+    return isFinite(earliest) ? earliest : null;
+  }
 
   sup.on("change", (id, state) => {
     if (state === "crashed" || state === "stopped") link.dropDriver(id);
@@ -85,6 +101,11 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       const live = Object.fromEntries(link.status().map((r) => [r.remote, r]));
       const names = Object.fromEntries(store.list().map((x) => [x.id, x.name]));
       return send(res, 200, link.net.snapshot(live, names));
+    }
+    if (m === "GET" && p[0] === "resources") return send(res, 200, resources.snapshot());
+    if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery" && p[3] === "compare") {
+      const split = Number(url.searchParams.get("split")) || firstMoveAt(p[1]);
+      return send(res, 200, batteryComparison(summarize, battery.samples(p[1]), split));
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery") {
       const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 7));
@@ -152,6 +173,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         link.dropDriver(id);
         await mgr.remove(id);
         link.net.forget(id);
+        resources.forget(id);
         return send(res, 200, { removed: id });
       }
       if (p[2] === "logs" && m === "GET") return send(res, 200, { lines: sup.logs(id) });
@@ -198,11 +220,12 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
 
   const stop = async () => {
     clearInterval(updTimer);
+    resources.close();
     link.close();
     await sup.stopAll();
     await new Promise((r) => server.close(r));
   };
-  return { server, store, sup, mgr, link, port: server.address().port, stop };
+  return { server, store, sup, mgr, link, resources, battery, port: server.address().port, stop };
 }
 
 function send(res, code, obj) {

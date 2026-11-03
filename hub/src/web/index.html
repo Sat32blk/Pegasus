@@ -175,13 +175,17 @@ tbody tr:hover{background:var(--panel2)}
 .slotbar{display:flex;gap:3px}
 .slotbar i{width:9px;height:14px;border-radius:3px;background:var(--idle-soft);border:1px solid var(--line)}
 .slotbar i.used{background:var(--accent);border-color:var(--accent)}
-.rrow{display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center;padding:11px 16px;border-top:1px solid var(--line)}
+.rrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:11px 16px;border-top:1px solid var(--line)}
 .rrow:first-child{border-top:0}
 .rrow .kind{font-size:12px;color:var(--mute)}
 .rgroup{font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);font-weight:600;padding:12px 16px 4px;border-top:1px solid var(--line)}
 .rgroup:first-child{border-top:0}
-.mv{margin-top:8px;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
-.mv pre{margin:6px 0 0;font:11.5px/1.5 var(--mono);white-space:pre-wrap;color:var(--mute);max-height:120px;overflow:auto}
+.mv{margin-top:8px;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;overflow-wrap:anywhere}
+.mv.failed{background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.mv .what{margin:6px 0 0;color:var(--ink)}
+.mv .acts{justify-content:flex-start;margin-top:10px;flex-wrap:wrap;align-items:center;white-space:normal}
+.mv pre{margin:6px 0 0;font:11.5px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--mute);max-height:160px;overflow:auto}
+.mv details summary{cursor:pointer;color:var(--mute);font-size:12px;margin-top:8px}
 details.more>summary{cursor:pointer;color:var(--mute);font-size:12.5px;padding:10px 16px;border-top:1px solid var(--line);list-style:none}
 details.more>summary::-webkit-details-marker{display:none}
 details.more>summary::before{content:"▸ ";}
@@ -290,7 +294,7 @@ ol.howto li{margin:6px 0}
   .acts{justify-content:flex-start;margin-top:6px;flex-wrap:wrap}
   .listhead .search{max-width:none;order:3;flex-basis:100%;margin-left:0}
   .pair,.row2{grid-template-columns:1fr}
-  .rrow{grid-template-columns:1fr;padding:11px 14px}
+  .rrow{grid-template-columns:minmax(0,1fr);padding:11px 14px}
   .themepop{position:fixed;left:14px;right:14px;top:58px;width:auto}
 }
 @media (max-width:520px){
@@ -416,6 +420,21 @@ async function refresh() {
   }
 }
 async function refreshNet() { try { net = await call("GET", "/network"); renderTiles(); if (netState.open) renderNetwork(); } catch {} }
+let resNow = null;
+async function refreshRes() { try { resNow = await call("GET", "/resources"); renderTiles(); if (win.kind === "resources") renderResources(); } catch {} }
+const batt = {}; // remote -> { compare, at }
+async function refreshBattery(force) {
+  for (const r of st?.remotes || []) {
+    if (!force && batt[r.remote] && Date.now() - batt[r.remote].at < 60000) continue;
+    try { batt[r.remote] = { compare: await call("GET", `/remotes/${encodeURIComponent(r.remote)}/battery/compare`), at: Date.now() }; } catch {}
+  }
+  renderTiles();
+}
+/** Times integrations finished moving to or from the hub, for chart markers. */
+function moveMarks(remote) {
+  const r = st?.remotes.find((x) => x.remote === remote) || st?.remotes[0];
+  return Object.entries(r?.moves || {}).filter(([, m]) => m.status === "done" && m.updated).map(([id, m]) => ({ t: m.updated, color: m.dir === "toHub" ? "var(--ok)" : "var(--warn)", label: (m.dir === "toHub" ? "→ hub: " : "← remote: ") + id }));
+}
 
 /* ---------------- render: top, banner, tiles ---------------- */
 function render() {
@@ -444,18 +463,127 @@ function spark(values, color) {
 }
 function renderTiles() {
   if (!st) return;
-  const run = items.filter((m) => m.status.state === "running").length;
+  const r0 = st.remotes[0];
+  const list = r0 && remoteLists[r0.remote] && !remoteLists[r0.remote].error ? remoteLists[r0.remote] : null;
+  const onHub = items.length, running = items.filter((m) => m.status.state === "running").length;
+  const slots = list ? list.filter((i) => i.type === "CUSTOM").length : null;
+  // 1. integrations: where they run
+  const t1 = `<button class="tile" data-a="integrations"><div class="k">Integrations</div>
+    <div class="v">${onHub} <small>on the hub${running < onHub ? ` · ${onHub - running} not running` : ""}</small></div>
+    <div class="sub2">${slots == null ? (r0 ? "reading the remote…" : "no remote linked") : `${slots} of 10 install slots used on ${esc(shortName(r0.remote))}`}</div>
+    ${slots == null ? "" : `<div class="bar"><i style="width:${slots * 10}%"></i></div>`}</button>`;
+  // 2. CPU and memory
   const cpu = items.reduce((a, m) => a + (m.usage?.cpu || 0), 0), mem = items.reduce((a, m) => a + (m.usage?.memMB || 0), 0) + (st.hubMemMB || 0);
+  const rr = resNow?.remotes.find((x) => x.last);
+  const t2 = `<button class="tile" data-a="resources"><div class="k">CPU &amp; memory</div>
+    <div class="v">${cpu.toFixed(1)}<small>% CPU</small> · ${mem}<small> MB</small></div>
+    <div class="sub2">${rr ? `remote: load ${rr.last.load1?.toFixed(2) ?? "—"} · ${rr.last.memUsedMB} of ${rr.last.memTotalMB} MB` : "on the hub"}</div>
+    ${spark((resNow?.hub.history || []).slice(-60).map((h) => h.cpu), "var(--accent)")}</button>`;
+  // 3. network
   const live = st.remotes.filter((r) => !r.standby && r.rttMs != null);
   const rtt = live.length ? live.reduce((a, r) => a + r.rttMs, 0) / live.length : null;
   const nr = net?.remotes.find((r) => r.connected);
-  const hist = nr ? nr.history.slice(-60) : [];
   const traffic = net ? net.remotes.reduce((a, r) => a + r.rate.inBps + r.rate.outBps, 0) : null;
-  $("#tiles").innerHTML = `
-    <div class="tile"><div class="k">Integrations running</div><div class="v">${run} <small>of ${items.length}</small></div><div class="bar"><i style="width:${items.length ? (run / items.length) * 100 : 0}%"></i></div></div>
-    <button class="tile" data-a="remotes"><div class="k">Remotes linked</div><div class="v">${st.remotes.length} <small>${((n) => n + (n === 1 ? " connection" : " connections"))(st.remotes.reduce((a, r) => a + r.sessions, 0))}</small></div></button>
-    <button class="tile" data-a="network"><div class="k">Link round trip</div><div class="v">${rtt != null ? fmtMs(rtt).replace(" ms", " <small>ms</small>") : st.remotes.some((r) => r.standby) ? "<small>remote asleep</small>" : "<small>—</small>"}</div>${spark(hist.map((h) => h.rtt), "var(--accent)")}</button>
-    <button class="tile" data-a="network"><div class="k">Hub usage · traffic</div><div class="v">${cpu.toFixed(1)}<small>% CPU</small> · ${mem}<small> MB</small></div><div class="sub2">${traffic == null ? "" : fmtRate(traffic) + " over the link"}</div></button>`;
+  const t3 = `<button class="tile" data-a="network"><div class="k">Network</div>
+    <div class="v">${rtt != null ? fmtMs(rtt).replace(" ms", " <small>ms round trip</small>") : st.remotes.some((r) => r.standby) ? "<small>remote asleep</small>" : "<small>no link</small>"}</div>
+    <div class="sub2">${traffic == null ? "" : fmtRate(traffic) + " · " + fmtN(nr ? nr.rate.msgsPerMin : 0) + " messages/min"}</div>
+    ${spark((nr?.history || []).slice(-60).map((h) => h.rtt), "var(--accent)")}</button>`;
+  // 4. battery
+  const b = r0 && batt[r0.remote]?.compare;
+  const last = b?.after?.last || b?.before?.last;
+  const sv = b?.saving;
+  const t4 = `<button class="tile" data-a="battery"><div class="k">Battery</div>
+    <div class="v">${last ? `${last.level}<small>%${last.charging ? " · charging" : ""}</small>` : "<small>—</small>"}</div>
+    <div class="sub2">${!r0 ? "no remote linked" : !b ? "" : !b.split ? "nothing moved to the hub yet" : !sv ? "measuring since the first move…" : sv.percentPerDay > 0 ? `saving about ${sv.percentPerDay}% a day${sv.confidence === "low" ? " (early estimate)" : ""}` : `no saving measured yet${sv.confidence === "low" ? " (early)" : ""}`}</div></button>`;
+  $("#tiles").innerHTML = t1 + t2 + t3 + t4;
+}
+
+/* ---------------- integrations: where everything runs ---------------- */
+function showIntegrations() {
+  const r0 = st.remotes[0];
+  openWin({ kind: "integrations", title: "Integrations", size: "wide", body: '<p class="sub2">Loading…</p>' });
+  const draw = () => {
+    if (win.kind !== "integrations") return;
+    const list = r0 && remoteLists[r0.remote] && !remoteLists[r0.remote].error ? remoteLists[r0.remote] : [];
+    const fromHub = new Set(items.flatMap((m) => (m.shownAs || []).filter((x) => x.id).map((x) => x.id)));
+    const hubRows = items.map((m) => `<tr><td>${iconOf(m)}</td><td><b>${esc(m.name)}</b><div class="sub2">${esc(m.version)} · ${esc(m.driverId)}</div></td>
+      <td><span class="status st-${esc(m.status.state)}">${STATE[m.status.state] || esc(m.status.state)}</span></td>
+      <td class="num">${m.usage?.cpu != null ? m.usage.cpu.toFixed(1) + "%" : "—"}</td><td class="num">${m.usage ? m.usage.memMB + " MB" : "—"}</td>
+      <td>${(m.shownAs || []).map((r) => r.id ? `<span class="ck">●</span> ${esc(shortName(r.remote))}` : `<span class="wt">●</span> ${esc(r.problem)}`).join("<br>") || "—"}</td></tr>`).join("");
+    const custom = list.filter((i) => i.type === "CUSTOM");
+    const builtin = list.filter((i) => i.type === "LOCAL" && i.instance);
+    const other = list.filter((i) => i.type === "EXTERNAL" && !fromHub.has(i.driver_id));
+    const row = (i, note) => `<tr><td><b>${esc(i.name)}</b> <span class="sub2" style="display:inline">${esc(i.version)}</span></td><td>${note}</td></tr>`;
+    $("#winBody").innerHTML = `
+      <div class="netgrid">
+        <div class="stat"><div class="k">On the hub</div><div class="v">${items.length}</div><div class="sub2">${items.filter((m) => m.status.state === "running").length} running</div></div>
+        <div class="stat"><div class="k">Installed on the remote</div><div class="v">${custom.length}<small> of 10 slots</small></div><div class="sub2">${10 - custom.length} free</div></div>
+        <div class="stat"><div class="k">Built into the remote</div><div class="v">${builtin.length}</div><div class="sub2">don't use slots</div></div>
+        <div class="stat"><div class="k">Other external</div><div class="v">${other.length}</div><div class="sub2">run elsewhere</div></div>
+      </div>
+      <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>On the hub</h4><span class="sub2" style="margin:0">no install slots used</span></div>
+        ${items.length ? `<div class="tablewrap"><table><thead><tr><th></th><th>Integration</th><th>Status</th><th class="num">CPU</th><th class="num">Memory</th><th>Shown on</th></tr></thead><tbody>${hubRows}</tbody></table></div>` : '<p class="sub2">Nothing yet.</p>'}</div>
+      <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Installed on ${esc(r0 ? shortName(r0.remote) : "the remote")}</h4>
+        <span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < custom.length ? "used" : ""}"></i>`).join("")}</span></span></div>
+        ${custom.length ? `<div class="tablewrap"><table><tbody>${custom.map((i) => row(i, i.movable ? '<span class="ck">can move to the hub</span>' : `<span class="xx">${esc(i.why || "stays on the remote")}</span>`)).join("")}</tbody></table></div>` : `<p class="sub2">${r0 ? "None." : "No remote linked."}</p>`}</div>
+      ${builtin.length || other.length ? `<div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Built in and other</h4></div><div class="tablewrap"><table><tbody>${builtin.map((i) => row(i, "built into the remote")).join("")}${other.map((i) => row(i, "external, not from this hub")).join("")}</tbody></table></div></div>` : ""}
+      <p class="sub2">Move integrations between the remote and the hub in the remote's section on the main page.</p>`;
+  };
+  if (r0) loadRemote(r0.remote, true).then(draw);
+  draw(); win.timer = setInterval(draw, 3000);
+}
+
+/* ---------------- CPU and memory ---------------- */
+const resState = { hours: Number(store.get("pg-res-hours", 1)) };
+function showResources() {
+  openWin({ kind: "resources", title: "CPU & memory", size: "wide", body: '<p class="sub2">Loading…</p>' });
+  refreshRes(); win.timer = setInterval(refreshRes, 10000);
+}
+function renderResources() {
+  if (!resNow || win.kind !== "resources") return;
+  const now = resNow.now, hours = resState.hours, t0 = now - hours * 3600e3;
+  const hh = resNow.hub.history.filter((x) => x.t >= t0), host = resNow.host;
+  const cpuNow = resNow.integrations.reduce((a, x) => a + (x.now?.cpu || 0), 0);
+  const memNow = resNow.integrations.reduce((a, x) => a + (x.now?.memMB || 0), 0) + resNow.hub.memMB;
+  const ints = [...resNow.integrations].sort((a, b) => (b.now?.memMB || 0) - (a.now?.memMB || 0));
+  const remotes = resNow.remotes.map((r) => {
+    const h = r.history.filter((x) => x.t >= t0), L = r.last;
+    const marks = moveMarks(r.remote).filter((m) => m.t >= t0);
+    return `<div class="netsec"><div class="nethead"><h4>${esc(shortName(r.remote))}</h4><span class="sub2" style="margin:0">${r.at ? `read ${ago(r.at)} ago` : ""}${r.error ? ` · <span class="bd">couldn't read it: ${esc(r.error)}</span>` : ""}</span></div>
+      ${L ? `<div class="netgrid">
+        <div class="stat"><div class="k">Load now</div><div class="v">${L.load1?.toFixed(2) ?? "—"}</div><div class="sub2">5 min ${L.load5?.toFixed(2) ?? "—"} · 15 min ${L.load15?.toFixed(2) ?? "—"}</div></div>
+        <div class="stat"><div class="k">Memory used</div><div class="v">${L.memUsedMB}<small> of ${L.memTotalMB} MB</small></div><div class="sub2">${Math.round((L.memUsedMB / L.memTotalMB) * 100)}%</div></div>
+        <div class="stat"><div class="k">Free storage</div><div class="v">${L.diskFreeMB != null ? fmtBytes(L.diskFreeMB * 1048576) : "—"}</div></div>
+        <div class="stat"><div class="k">Install slots</div><div class="v">${((l) => l ? l.filter((i) => i.type === "CUSTOM").length : "—")(remoteLists[r.remote] && !remoteLists[r.remote].error ? remoteLists[r.remote] : null)}<small> of 10</small></div></div>
+      </div>` : `<p class="sub2">${r.error ? "" : "Read once a minute while the remote is awake (never while it sleeps)."}</p>`}
+      ${h.length ? `${lineChart({ t0, t1: now, H: 130, yFmt: (v) => v.toFixed(v < 10 ? 1 : 0), marks, series: [{ color: "var(--accent)", points: h.map((x) => [x.t + 30e3, x.load]) }] })}
+        <div class="legend"><span><i style="background:var(--accent)"></i>load (1 min)</span>${marks.length ? '<span><i style="background:var(--ok)"></i>moved to the hub</span><span><i style="background:var(--warn)"></i>moved back</span>' : ""}</div>
+        ${lineChart({ t0, t1: now, H: 120, yFmt: (v) => Math.round(v) + " MB", marks, series: [{ color: "var(--out)", points: h.map((x) => [x.t + 30e3, x.memUsed]) }] })}
+        <div class="legend"><span><i style="background:var(--out)"></i>memory used</span></div>` : ""}
+      <p class="sub2">The remote's load and memory cover everything it runs. Integrations moved to the hub no longer add to them.</p></div>`;
+  }).join("");
+  const keep = $("#winBody").scrollTop;
+  $("#winBody").innerHTML = `
+    <div class="nethead" style="margin-bottom:4px"><span class="sub2" style="margin:0">Updates every 10 seconds.</span>
+      <div class="seg">${[[1, "1 h"], [6, "6 h"], [24, "24 h"]].map(([v, l]) => `<button data-hours="${v}" class="${v === hours ? "on" : ""}" aria-pressed="${v === hours}">${l}</button>`).join("")}</div></div>
+    <div class="netsec"><div class="nethead"><h4>Hub</h4><span class="sub2" style="margin:0">the hub and the integrations it runs</span></div>
+      <div class="netgrid">
+        <div class="stat"><div class="k">CPU now</div><div class="v">${cpuNow.toFixed(1)}<small>%</small></div><div class="sub2">of one core · ${host.cores} cores on the server</div></div>
+        <div class="stat"><div class="k">Memory now</div><div class="v">${memNow}<small> MB</small></div><div class="sub2">hub ${resNow.hub.memMB} MB + integrations</div></div>
+        <div class="stat"><div class="k">Server load</div><div class="v">${host.load1}</div><div class="sub2">everything on the server, ${host.cores} cores</div></div>
+        <div class="stat"><div class="k">Server memory</div><div class="v">${fmtBytes(host.memUsedMB * 1048576)}<small> of ${fmtBytes(host.memTotalMB * 1048576)}</small></div><div class="sub2">${Math.round((host.memUsedMB / host.memTotalMB) * 100)}% used</div></div>
+      </div>
+      ${hh.length ? `${lineChart({ t0, t1: now, H: 130, yFmt: (v) => v.toFixed(v < 10 ? 1 : 0) + "%", series: [{ color: "var(--accent)", points: hh.map((x) => [x.t + 30e3, x.cpu]) }, { color: "var(--faint)", dash: "4 3", width: 1.5, points: hh.map((x) => [x.t + 30e3, x.cpuMax]) }] })}
+      <div class="legend"><span><i style="background:var(--accent)"></i>CPU, average per minute</span><span><i style="background:var(--faint)"></i>busiest moment</span></div>
+      ${lineChart({ t0, t1: now, H: 120, yFmt: (v) => Math.round(v) + " MB", series: [{ color: "var(--out)", points: hh.map((x) => [x.t + 30e3, x.mem]) }] })}
+      <div class="legend"><span><i style="background:var(--out)"></i>memory</span></div>` : '<p class="sub2">Collecting… the first point appears within a minute.</p>'}
+      <div class="tablewrap" style="margin-top:6px"><table><thead><tr><th>Integration</th><th class="num">CPU now</th><th class="num">Average (1 h)</th><th class="num">Busiest (1 h)</th><th class="num">Memory</th><th class="num">Most (1 h)</th></tr></thead>
+        <tbody>${ints.map((x) => `<tr><td><b>${esc(x.name)}</b>${x.state !== "running" ? ` <span class="sub2" style="display:inline">${esc(x.state)}</span>` : ""}</td><td class="num">${x.now?.cpu != null ? x.now.cpu.toFixed(1) + "%" : "—"}</td><td class="num">${x.hour ? x.hour.cpu.toFixed(1) + "%" : "—"}</td><td class="num">${x.hour ? x.hour.cpuMax + "%" : "—"}</td><td class="num">${x.now ? x.now.memMB + " MB" : "—"}</td><td class="num">${x.hour ? x.hour.memMax + " MB" : "—"}</td></tr>`).join("") || '<tr><td colspan="6" class="sub2">Nothing on the hub.</td></tr>'}</tbody></table></div>
+      <p class="sub2">CPU is a percentage of one core, as in <code>top</code>. Memory includes each integration's helper processes.</p>
+    </div>
+    ${remotes}`;
+  $("#winBody").scrollTop = keep;
+  $$("#winBody [data-hours]").forEach((b) => (b.onclick = () => { resState.hours = Number(b.dataset.hours); store.set("pg-res-hours", resState.hours); renderResources(); }));
 }
 
 /* ---------------- integrations table ---------------- */
@@ -516,6 +644,30 @@ async function loadRemote(name, force, every = 20000) {
   catch (e) { remoteLists[name] = { error: e.message }; }
   renderRemotes();
 }
+/** A move's error in plain words; the raw message goes under "Details". */
+function friendlyMoveError(err) {
+  const e = String(err || "");
+  let m;
+  if ((m = /Invalid entity_id '([^']+)'/.exec(e) || /unknown entity (\S+)/.exec(e))) return `The remote refused to put <b>${esc(m[1].split(".").slice(2).join(".") || m[1])}</b> back into an activity, because that entity isn't selected on the remote yet.`;
+  if ((m = /could not select (\d+) of (\d+) entities[^:]*:\s*(.*)$/s.exec(e))) return `Couldn't select ${m[1]} of its ${m[2]} entities on the remote: ${esc(m[3])}`;
+  if (/Integration is not active/i.test(e)) return "The integration wasn't running at that moment, so the remote couldn't list its entities.";
+  if (/no answer within|timed? ?out/i.test(e)) return "The remote or the hub didn't answer in time.";
+  if (/not linked|link lost|link closed/i.test(e)) return "The remote's link to the hub dropped during the move.";
+  if (/maximum custom|no free (install )?slot/i.test(e)) return "There's no free install slot on the remote. Move another integration to the hub first.";
+  if (/checksum/i.test(e)) return "The package from the hub arrived damaged.";
+  if (/has no .*tar\.gz/i.test(e)) return "Its GitHub release has no package for the remote, so it can't be moved back automatically.";
+  if ((m = /HTTP (\d{3})/.exec(e))) return `The remote refused one of the changes (HTTP ${m[1]}).`;
+  return esc(e.length > 180 ? e.slice(0, 177) + "…" : e);
+}
+const STEP = { "hub copy": "installing it on the hub", snapshot: "saving where it's used", "stand-in": "swapping in the stand-in", settings: "handing over its settings", "free slot": "freeing its slot", register: "registering it from the hub", instance: "selecting its entities again", restore: "putting its references back", verify: "checking every reference", "hub package": "packing it on the hub", download: "downloading it from the hub", "remove external": "removing the hub registration", "remove stand-in": "removing the stand-in", install: "installing it on the remote", "hub cleanup": "removing the hub copy" };
+function moveBox(mv, i, remote) {
+  const where = mv.dir === "toHub" ? "to the hub" : "back to the remote";
+  if (mv.status === "failed") return `<div class="mv failed"><span class="status st-failed">Move ${where} stopped</span> <span class="sub2" style="display:inline">while ${esc(STEP[mv.step] || mv.step)}</span>
+      <p class="what">${friendlyMoveError(mv.error)}</p>
+      <div class="acts"><button class="btn primary small" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(remote)}">Retry</button><span class="sub2" style="margin:0">Retry continues from where it stopped. What was saved is kept.</span></div>
+      <details><summary>Details</summary><pre>${esc(mv.error || "")}\n\n${esc(mv.log.slice(-8).join("\n"))}</pre></details></div>`;
+  return `<div class="mv"><span class="status st-${mv.status === "done" ? "done" : "moving"}">${mv.status === "done" ? "Moved " + where : "Moving " + where}</span>${mv.status !== "done" ? ` <span class="sub2" style="display:inline">${esc(STEP[mv.step] || mv.step)}</span>` : ""}<pre>${esc(mv.log.slice(-5).join("\n"))}</pre></div>`;
+}
 function renderRemotes() {
   if (!st) return;
   const openDetails = new Set($$("#remoteSections details[open]").map((d) => d.dataset.remote));
@@ -531,14 +683,13 @@ function renderRemotes() {
       const mv = moves[i.driver_id];
       const onHub = fromHub.has(i.driver_id) || standIns.has(i.driver_id);
       let action = "";
-      if (mv?.status === "running") action = `<span class="status st-moving">moving · ${esc(mv.step)}</span>`;
-      else if (mv?.status === "failed") action = `<button class="btn" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(r.remote)}">Retry</button>`;
+      if (mv?.status === "running" || mv?.status === "failed") action = ""; // shown in the move box
       else if (onHub) action = `<button class="btn" data-mv-back="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move back to remote</button>`;
       else if (i.movable) action = `<button class="btn primary" data-mv-hub="${esc(i.driver_id)}" data-remote="${esc(r.remote)}" data-name="${esc(i.name)}">Move to hub</button>`;
-      const kind = onHub ? (standIns.has(i.driver_id) ? "runs on the hub, through a stand-in" : "runs on the hub") : TYPE[i.type] || i.type;
-      const why = !onHub && !i.movable && i.why && i.type === "CUSTOM" ? ` · ${esc(i.why)}` : "";
-      const progress = mv && (mv.status !== "done" || Date.now() - mv.updated < 120000)
-        ? `<div class="mv"><span class="status st-${mv.status === "failed" ? "failed" : mv.status === "done" ? "done" : "moving"}">${mv.status === "failed" ? "Stopped" : mv.status === "done" ? "Done" : "Moving"}</span> ${mv.dir === "toHub" ? "to the hub" : "back to the remote"}${mv.error ? `: ${esc(mv.error)}` : ""}<pre>${esc(mv.log.slice(-6).join("\n"))}</pre></div>` : "";
+      const moving = mv && mv.status !== "done";
+      const kind = moving ? (mv.dir === "toHub" ? "moving to the hub" : "moving back to the remote") : onHub ? (standIns.has(i.driver_id) ? "runs on the hub, through a stand-in" : "runs on the hub") : TYPE[i.type] || i.type;
+      const why = !moving && !onHub && !i.movable && i.why && i.type === "CUSTOM" ? ` · ${esc(i.why)}` : "";
+      const progress = mv && (mv.status !== "done" || Date.now() - mv.updated < 120000) ? moveBox(mv, i, r.remote) : "";
       return `<div class="rrow"><div><b>${esc(i.name)}</b> <span class="sub2" style="display:inline">${esc(i.version)}</span><div class="kind">${onHub ? '<span class="ck">●</span> ' : ""}${esc(kind)}${why}</div>${progress}</div><div>${action}</div></div>`;
     };
     let rows;
@@ -546,11 +697,13 @@ function renderRemotes() {
     else if (list.error) rows = `<div class="rrow"><div class="bd">${esc(list.error)}</div></div>`;
     else {
       const byName = (a, b) => a.name.localeCompare(b.name);
-      const installed = list.filter((i) => i.type === "CUSTOM").sort(byName);
-      const hub = list.filter((i) => i.type !== "CUSTOM" && (fromHub.has(i.driver_id) || moves[i.driver_id])).sort(byName);
+      // on the hub: registered from the hub, or a move involving it is under way / stopped
+      const isHub = (i) => fromHub.has(i.driver_id) || standIns.has(i.driver_id) || (moves[i.driver_id] && moves[i.driver_id].status !== "done" && i.type !== "LOCAL") || (i.type === "EXTERNAL" && moves[i.driver_id]?.dir === "toHub");
+      const hub = list.filter(isHub).sort(byName);
+      const installed = list.filter((i) => i.type === "CUSTOM" && !hub.includes(i)).sort(byName);
       const rest = list.filter((i) => i.type !== "CUSTOM" && !hub.includes(i) && (i.type !== "LOCAL" || i.instance)).sort(byName);
-      rows = (installed.length ? `<div class="rgroup">Installed on the remote</div>${installed.map(one).join("")}` : "")
-        + (hub.length ? `<div class="rgroup">Running on the hub</div>${hub.map(one).join("")}` : "")
+      rows = (hub.length ? `<div class="rgroup">Running on the hub</div>${hub.map(one).join("")}` : "")
+        + (installed.length ? `<div class="rgroup">Installed on the remote</div>${installed.map(one).join("")}` : "")
         + (rest.length ? `<details class="more" data-remote="${esc(r.remote)}" ${openDetails.has(r.remote) ? "open" : ""}><summary>${rest.length} built-in and other integrations (they don't use install slots)</summary>${rest.map(one).join("")}</details>` : "");
     }
     return `<section class="card"><div class="listhead"><h2>On ${esc(shortName(r.remote))}</h2>
@@ -615,6 +768,9 @@ document.addEventListener("click", async (e) => {
       case "pair": return showRemotes("pair");
       case "remotes": return showRemotes("linked");
       case "network": return showNetwork(id || null);
+      case "integrations": return showIntegrations();
+      case "resources": return showResources();
+      case "battery": return st.remotes[0] ? showBattery(st.remotes[0].remote, 7) : toast("No remote is linked");
       case "logs": return showLogs(m);
       case "settings": return showSettings(m, "general");
       case "remove": return confirmRemove(m);
@@ -764,6 +920,7 @@ function confirmMove(remote, driverId, name) {
       <li>To free its install slot it's removed from the remote and added back from the hub. <b>Its buttons are missing for a few seconds</b>, then everything saved is put back and checked.</li>
       <li>If anything doesn't come back, the move stops, keeps what it saved, and offers Retry.</li></ol>
       <div class="banner warn" style="margin:0 0 6px"><span>💾</span><span><b>Make a backup in the web configurator first</b> (Settings → Backup).</span></div>
+      <p class="sub2">Some devices ask once to allow the new controller, because the integration now talks to them from the hub's address. Samsung TVs show an <b>Allow</b> prompt: accept it on the TV.</p>
       <div class="toggle"><div class="t"><b>Keep its install slot instead</b><span>A small stand-in stays on the remote and passes its traffic to the hub. Nothing is removed, but no slot is freed.</span></div><input type="checkbox" class="sw" id="keepSlot" aria-label="Keep its install slot"></div>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn primary" id="goMove">Move to hub</button>` });
   $("#goMove").onclick = async () => {
@@ -773,7 +930,7 @@ function confirmMove(remote, driverId, name) {
 }
 function confirmMoveBack(remote, driverId, name) {
   openWin({ kind: "move", title: `Move ${name} back to the remote`, size: "narrow",
-    body: `<p style="margin-top:0">It's installed on <b>${esc(shortName(remote))}</b> again from its GitHub release, with its settings. It needs a <b>free install slot</b>.</p><p class="sub2">Its buttons disappear for a few seconds while it's reinstalled, then everything is put back and checked.</p>`,
+    body: `<p style="margin-top:0">It's installed on <b>${esc(shortName(remote))}</b> again from its GitHub release, with its settings. It needs a <b>free install slot</b>.</p><p class="sub2">Its buttons disappear for a few seconds while it's reinstalled, then everything is put back and checked.</p><p class="sub2">Some devices ask once to allow the remote again (Samsung TVs show an <b>Allow</b> prompt): accept it on the device.</p>`,
     foot: `<button class="btn" data-close>Cancel</button><button class="btn primary" id="goBack">Move back</button>` });
   $("#goBack").onclick = async () => {
     try { await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId, to: "remote" }); toast(`Moving ${name} back`); closeWin(); setTimeout(() => loadRemote(remote, true), 1500); }
@@ -816,9 +973,10 @@ function showRemotes(tab) {
 /* battery */
 async function showBattery(remote, days) {
   openWin({ kind: "battery", title: `Battery — ${shortName(remote)}`, size: "wide", body: '<p class="sub2">Loading…</p>' });
-  let j;
-  try { j = await call("GET", `/remotes/${encodeURIComponent(remote)}/battery?days=${days}`); }
+  let j, cmpj;
+  try { [j, cmpj] = await Promise.all([call("GET", `/remotes/${encodeURIComponent(remote)}/battery?days=${days}`), call("GET", `/remotes/${encodeURIComponent(remote)}/battery/compare`)]); }
   catch (e) { $("#winBody").innerHTML = `<p class="bd">${esc(e.message)}</p>`; return; }
+  if (win.kind !== "battery") return;
   const S = j.samples.filter((x) => typeof x.level === "number");
   const sum = j.summary, prev = j.previous;
   const W = 860, Hh = 220, pad = 32, t1 = Date.now(), t0 = t1 - days * 864e5;
@@ -830,18 +988,32 @@ async function showBattery(remote, days) {
     if (a.charging) shades += `<rect x="${X(a.t)}" y="${Hh - 22}" width="${Math.max(1, X(c.t) - X(a.t))}" height="4" fill="var(--ok)"/>`;
   }
   const line = S.map((x, i) => `${i ? "L" : "M"}${X(x.t).toFixed(1)},${Y(x.level).toFixed(1)}`).join("");
+  shades += moveMarks(remote).filter((m) => m.t >= t0).map((m) => `<line x1="${X(m.t)}" x2="${X(m.t)}" y1="8" y2="${Hh - 22}" stroke="${m.color}" stroke-width="2" stroke-dasharray="5 3"><title>${esc(m.label)}</title></line>`).join("");
   const grid = [0, 25, 50, 75, 100].map((l) => `<line x1="${pad}" x2="${W - 8}" y1="${Y(l)}" y2="${Y(l)}" stroke="var(--line)"/><text x="2" y="${Y(l) + 4}" font-size="10" fill="var(--mute)">${l}%</text>`).join("");
   const ticks = Array.from({ length: days + 1 }, (_, i) => `<text x="${X(t0 + i * 864e5)}" y="${Hh - 4}" font-size="10" fill="var(--mute)" text-anchor="middle">${new Date(t0 + i * 864e5).toLocaleDateString(undefined, days === 1 ? { hour: "numeric" } : { weekday: "short" })}</text>`).join("");
   const f = (v, u) => (v == null ? "—" : v + u);
   const cmp = (a, b) => (a == null || b == null ? "" : ` <span class="sub2" style="display:inline">(was ${b})</span>`);
   const last = sum.last, who = sum.keptAwakeBy.length ? sum.keptAwakeBy.map((w) => esc(w.who)).join(", ") : "nothing";
-  $("#winBody").innerHTML = `
+  const c = cmpj, sv = c.saving, dr = (s, k) => s?.drainPerHour?.[k] == null ? "—" : s.drainPerHour[k] + " %/h";
+  const CONF = { good: "several days on each side", fair: "a day or more on each side", low: "only a few hours of readings so far: an early estimate" };
+  const savingHtml = !c.split
+    ? `<div class="banner warn" style="margin:0 0 14px"><span>🔋</span><span>No integration has moved to the hub yet, so there's nothing to compare. The battery is recorded either way.</span></div>`
+    : `<div class="netsec" style="margin:0 0 6px;padding:0;border:0"><div class="nethead" style="margin-bottom:6px"><h4>Since moving integrations to the hub</h4><span class="sub2" style="margin:0">first move ${new Date(c.split).toLocaleString()}</span></div>
+      <div class="netgrid">
+        <div class="stat"><div class="k">Saved per day</div><div class="v">${sv ? (sv.percentPerDay > 0 ? `${sv.percentPerDay}<small>% battery</small>` : `0<small>%</small>`) : "—"}</div><div class="sub2">${sv?.relative != null && sv.percentPerDay > 0 ? `${Math.round(sv.relative * 100)}% less drain` : sv ? "no difference measured" : "needs readings on both sides"}</div></div>
+        <div class="stat"><div class="k">A full charge lasts</div><div class="v">${sv?.daysPerChargeAfter ? sv.daysPerChargeAfter + "<small> days</small>" : "—"}</div><div class="sub2">${sv?.daysPerChargeBefore ? `was ${sv.daysPerChargeBefore} days` : ""}</div></div>
+        <div class="stat"><div class="k">Drain while awake</div><div class="v">${dr(c.after, "awake")}</div><div class="sub2">was ${dr(c.before, "awake")}</div></div>
+        <div class="stat"><div class="k">Drain while asleep</div><div class="v">${dr(c.after, "asleep")}</div><div class="sub2">was ${dr(c.before, "asleep")}</div></div>
+      </div>
+      <p class="sub2" style="margin-top:0">${sv ? `Based on ${sv.hoursBefore} h of readings before and ${sv.hoursAfter} h after (${CONF[sv.confidence]}), with the remote awake about ${sv.awakeHoursPerDay} h a day. How much you use the remote changes the drain too, so compare similar days.` : "Needs at least half an hour of awake readings before and after the first move."}</p></div>`;
+  $("#winBody").innerHTML = savingHtml + `
     <div class="seg" style="margin:0 0 12px">${[1, 7, 30].map((d) => `<button data-days="${d}" class="${d === days ? "on" : ""}">${d === 1 ? "24 h" : d + " days"}</button>`).join("")}</div>
     ${S.length < 2 ? '<p class="sub2">Not enough readings yet. The Bridge records the battery every 10 minutes while the remote is awake, and around sleep; give it a day.</p>' : ""}
     <svg class="chart" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Battery level over time">${grid}${shades}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${ticks}</svg>
-    <div class="legend"><span><i style="background:var(--accent);opacity:.25"></i>asleep</span><span><i style="background:var(--ok)"></i>charging</span></div>
+    <div class="legend"><span><i style="background:var(--accent);opacity:.25"></i>asleep</span><span><i style="background:var(--ok)"></i>charging</span><span><i style="background:var(--ok)"></i>dashed: moved to the hub</span><span><i style="background:var(--warn)"></i>dashed: moved back</span></div>
+    <div class="nethead" style="margin:4px 0 0"><h4>${days === 1 ? "Last 24 hours" : `Last ${days} days`}</h4></div>
     <div class="netgrid">
-      <div class="stat"><div class="k">Now</div><div class="v">${last ? `${last.level}<small>%${last.charging ? " · charging" : ""}</small>` : "—"}</div></div>
+      <div class="stat"><div class="k">Level now</div><div class="v">${last ? `${last.level}<small>%${last.charging ? " · charging" : ""}</small>` : "—"}</div></div>
       <div class="stat"><div class="k">Drain while awake</div><div class="v">${f(sum.drainPerHour.awake, "<small> %/h</small>")}</div><div class="sub2">over ${sum.hours.awake} h${cmp(sum.drainPerHour.awake, prev.drainPerHour.awake)}</div></div>
       <div class="stat"><div class="k">Drain while asleep</div><div class="v">${f(sum.drainPerHour.asleep, "<small> %/h</small>")}</div><div class="sub2">over ${sum.hours.asleep} h${cmp(sum.drainPerHour.asleep, prev.drainPerHour.asleep)}</div></div>
       <div class="stat"><div class="k">A full charge lasts</div><div class="v">${sum.hoursPerCharge ? `${Math.round(sum.hoursPerCharge / 24 * 10) / 10}<small> days</small>` : "—"}</div><div class="sub2">at this use${cmp(sum.hoursPerCharge, prev.hoursPerCharge)}</div></div>
@@ -857,7 +1029,7 @@ function showNetwork(focus) {
   openWin({ kind: "network", title: "Network statistics", size: "wide", body: '<p class="sub2">Loading…</p>' });
   refreshNet(); win.timer = setInterval(refreshNet, 5000);
 }
-function lineChart({ series, t0, t1, H = 150, yFmt, down = [] }) {
+function lineChart({ series, t0, t1, H = 150, yFmt, down = [], marks = [] }) {
   const W = Math.round(Math.max(340, Math.min(900, ($("#winBody")?.clientWidth || 900) - 36))), L = 46, R = 10, T = 10, B = 22;
   const all = series.flatMap((s) => s.points.map((p) => p[1])).filter((v) => v != null);
   let max = all.length ? Math.max(...all) : 1; if (max <= 0) max = 1;
@@ -868,7 +1040,8 @@ function lineChart({ series, t0, t1, H = 150, yFmt, down = [] }) {
   const span = t1 - t0, fit = Math.max(2, Math.floor((W - L - R) / 75));
   const step = [300e3, 600e3, 900e3, 1800e3, 3600e3, 7200e3, 4 * 3600e3, 6 * 3600e3].find((x) => span / x <= fit) || 12 * 3600e3;
   let ticks = ""; for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) ticks += `<text x="${X(t)}" y="${H - 6}" font-size="10.5" fill="var(--mute)" text-anchor="middle">${new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</text>`;
-  const drops = down.map((t) => `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" stroke="var(--bad)" stroke-dasharray="3 3"/>`).join("");
+  const drops = down.map((t) => `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" stroke="var(--bad)" stroke-dasharray="3 3"/>`).join("")
+    + marks.filter((m) => m.t >= t0 && m.t <= t1).map((m) => `<line x1="${X(m.t)}" x2="${X(m.t)}" y1="${T}" y2="${H - B}" stroke="${m.color}" stroke-width="2" stroke-dasharray="5 3"><title>${esc(m.label)} · ${new Date(m.t).toLocaleTimeString()}</title></line>`).join("");
   const paths = series.map((s) => {
     if (s.bars) { const bw = Math.max(1, (W - L - R) / ((t1 - t0) / 60000) - 1); return s.points.filter((p) => p[1] != null).map(([t, v]) => `<rect x="${X(t) + (s.offset || 0) * bw / 2}" y="${Y(v)}" width="${bw / 2}" height="${Math.max(0, H - B - Y(v))}" fill="${s.color}" opacity=".85"><title>${new Date(t).toLocaleTimeString()} · ${yFmt(v)}</title></rect>`).join(""); }
     let d = "", on = false;
@@ -925,9 +1098,9 @@ function renderNetwork() {
 
 /* ---------------- start ---------------- */
 applyTheme();
-refresh().then(refreshNet);
+refresh().then(() => { refreshNet(); refreshRes(); refreshBattery(); });
 setInterval(() => { if (!win.kind || win.kind === "network") refresh(); }, 3000);
-setInterval(() => { if (!netState.open) refreshNet(); }, 15000);
+setInterval(() => { if (!netState.open) refreshNet(); if (win.kind !== "resources") refreshRes(); refreshBattery(); }, 15000);
 </script>
 </body>
 </html>
