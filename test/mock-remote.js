@@ -28,6 +28,7 @@ const freePort = () =>
 export async function startMockRemote({ apiKey = "test-key", log = () => {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pg-mockremote-"));
   const drivers = new Map(); // id -> { meta, type, proc, dir }
+  const offers = new Map(); // driver id -> entity ids its driver offers (as the core would load them)
   const instances = new Map(); // integration_id -> { integration_id, driver_id, name, icon, configured: [] }
   const entities = new Map(); // entity_id -> { entity_id, integration_id, name, icon, entity_type }
   const activities = new Map();
@@ -104,6 +105,7 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
     d.proc?.kill("SIGKILL");
     for (const [iid, inst] of instances) {
       if (inst.driver_id !== id) continue;
+      offers.set(id, [...new Set([...(offers.get(id) || []), ...inst.configured])]);
       instances.delete(iid);
       for (const eid of [...entities.keys()]) if (eid.startsWith(iid + ".")) entities.delete(eid);
       stripRefs(iid + ".");
@@ -184,13 +186,21 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
         const inst = instances.get(p[2]);
         if (!inst) return send(404, { message: "not found" });
         if (!p[3] && M === "GET") return send(200, (({ configured, ...i }) => i)(inst));
-        if (p[3] === "entities" && M === "GET") return send(200, paged(inst.configured.map((e) => ({ entity_id: e })), url));
+        if (p[3] === "entities" && M === "GET") {
+          // like the real core: the driver's entity list is only known after a reload (or earlier use)
+          if (url.searchParams.get("reload") === "true") inst.loaded = true;
+          const offered = inst.loaded || inst.configured.length ? [...new Set([...(offers.get(inst.driver_id) || []), ...inst.configured])] : [];
+          const filter = url.searchParams.get("filter") || "NEW";
+          const list = filter === "CONFIGURED" ? inst.configured : filter === "ALL" ? offered : offered.filter((e) => !inst.configured.includes(e));
+          return send(200, paged(list.map((e) => ({ entity_id: e })), url));
+        }
         if (p[3] === "entities" && M === "POST") {
-          // like the real core: full entity IDs only; anything else is ignored without an error
-          for (const full of body() || []) {
-            if (typeof full !== "string" || !full.startsWith(inst.integration_id + ".")) continue;
-            const e = full.slice(inst.integration_id.length + 1);
+          // like the real core: the driver's own entity IDs, only ones it has loaded; others are ignored
+          const offered = inst.loaded ? offers.get(inst.driver_id) || [] : [];
+          for (const e of body() || []) {
+            if (typeof e !== "string" || !offered.includes(e)) continue;
             if (!inst.configured.includes(e)) inst.configured.push(e);
+            const full = `${inst.integration_id}.${e}`;
             if (!entities.has(full)) entities.set(full, { entity_id: full, integration_id: inst.integration_id, name: { en: e }, entity_type: "switch" });
           }
           return send(200, []);

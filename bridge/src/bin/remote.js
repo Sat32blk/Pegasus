@@ -213,31 +213,44 @@ export class RemoteOps {
     return inst.integration_id;
   }
 
-  /** Entity IDs (full: <instance>.<own id>) the remote has configured for an instance. */
+  /** The integration's own IDs of the entities the remote has configured for an instance. */
   async configuredOf(instanceId) {
-    const prefix = instanceId + ".";
-    return (await this.all("/entities")).map((e) => e.entity_id).filter((id) => id.startsWith(prefix));
+    return (await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=CONFIGURED`)).map((e) => e.entity_id);
   }
 
   /**
-   * Selects the entities again on a (new) instance and checks the remote really took them: the core
-   * wants full entity IDs, ignores ones it doesn't know yet, and only knows them once it has asked the
-   * driver, so ask it to, retry for a while, and stop with a clear error before anything else changes.
+   * Selects the entities again on a (new) instance and checks the remote really took them.
+   * POST /intg/instances/{id}/entities takes the integration's own entity IDs and silently ignores
+   * ones it doesn't know yet; it only knows them after asking the driver (reload=true), which only
+   * works once the instance is connected. So: wait for it, reload, select, check; stop with a clear
+   * error before anything else changes.
    */
-  async configureEntities(instanceId, oldInstanceId, ids, { tries = 15, wait = 2000 } = {}) {
-    const own = ids.map((x) => (x.startsWith(oldInstanceId + ".") ? x.slice(oldInstanceId.length + 1) : x));
-    const want = own.map((x) => `${instanceId}.${x}`);
+  async configureEntities(instanceId, oldInstanceId, ids, { tries = 30, wait = 2000 } = {}) {
+    const want = ids.map((x) => (x.startsWith(oldInstanceId + ".") ? x.slice(oldInstanceId.length + 1) : x));
     let missing = want;
+    let offered = null;
+    let lastError = "";
     for (let i = 0; i < tries; i++) {
-      // makes the core fetch the driver's entity list (needed right after the instance is created)
-      await this.core.get(`/intg/instances/${enc(instanceId)}/entities?filter=ALL&limit=100`).catch(() => null);
-      await this.core.post(`/intg/instances/${enc(instanceId)}/entities`, missing).catch(() => null);
-      const have = new Set(await this.configuredOf(instanceId));
-      missing = want.filter((x) => !have.has(x));
-      if (!missing.length) return;
+      try {
+        offered = new Set((await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=ALL&reload=true`)).map((e) => e.entity_id));
+        const toAdd = missing.filter((x) => offered.has(x));
+        if (toAdd.length) await this.core.post(`/intg/instances/${enc(instanceId)}/entities`, toAdd);
+        const have = new Set(await this.configuredOf(instanceId));
+        missing = want.filter((x) => !have.has(x));
+        if (!missing.length) return;
+        lastError = "";
+      } catch (e) {
+        lastError = e.message; // e.g. "Integration is not active" while it is still connecting
+      }
       await new Promise((r) => setTimeout(r, wait));
     }
-    throw new Error(`the remote did not take ${missing.length} of ${want.length} entities (${missing.map((x) => x.slice(instanceId.length + 1)).join(", ")}); is the device on and reachable from the hub?`);
+    const notOffered = offered ? missing.filter((x) => !offered.has(x)) : missing;
+    const why = !offered
+      ? `the integration never became active on the remote (${lastError || "no answer"})`
+      : notOffered.length
+        ? `the integration does not offer ${notOffered.length === missing.length ? "them" : notOffered.join(", ")}; is the device on and reachable from the hub?`
+        : "the remote did not accept them";
+    throw new Error(`could not select ${missing.length} of ${want.length} entities (${missing.join(", ")}): ${why}`);
   }
 
   async deleteDriver(id) {
