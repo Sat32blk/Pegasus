@@ -255,13 +255,36 @@ try {
     console.log("  even with no entity list at all, the saved references name every entity to select");
   }
 
-  step("integrations that control the remote can't move");
-  const selfArchive = createTarGz(entries.map((e) => (e.name.endsWith("driver.json") ? { ...e, data: JSON.stringify({ ...driverJson, driver_id: "self_control" }) } : e)));
-  remote.install(selfArchive, false);
-  const listed = (await hub.link.call("test-remote", "remote.integrations", {}, 10000)).find((i) => i.driver_id === "self_control");
-  assert.equal(listed.movable, false);
-  await assert.rejects(hub.link.call("test-remote", "move.toHub", { driverId: "self_control" }, 10000).then(() => waitMove("self_control")).then((m) => { if (m.status !== "done") throw new Error(m.error); }), /controls the remote/);
-  console.log(`  self_control: not movable (${listed.why})`);
+  step("the Bridge itself can't move; Remote Self-Control can");
+  const archiveAs = (id) => createTarGz(entries.map((e) => (e.name.endsWith("driver.json") ? { ...e, data: JSON.stringify({ ...driverJson, driver_id: id }) } : e)));
+  remote.install(archiveAs("pegasis_bridge"), false);
+  remote.install(archiveAs("self_control"), false);
+  const all = await hub.link.call("test-remote", "remote.integrations", {}, 10000);
+  const bridgeRow = all.find((i) => i.driver_id === "pegasis_bridge");
+  assert.equal(bridgeRow.movable, false);
+  assert.equal(all.find((i) => i.driver_id === "self_control").movable, true, "self_control should be movable now");
+  await assert.rejects(hub.link.call("test-remote", "move.toHub", { driverId: "pegasis_bridge" }, 10000).then(() => waitMove("pegasis_bridge")).then((m) => { if (m.status !== "done") throw new Error(m.error); }), /Bridge itself/);
+  console.log(`  pegasis_bridge: not movable (${bridgeRow.why}); self_control: movable`);
+
+  step("settings that point at the remote itself are switched to its address on the hub, and back");
+  {
+    const { pointSettings } = await import("../hub/src/moves.js");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pg-point-"));
+    fs.mkdirSync(path.join(dir, "sub"));
+    fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({ address: "127.0.0.1", apiKey: "k", note: "127.0.0.1", tv: { host: "192.0.2.5" } }));
+    fs.writeFileSync(path.join(dir, "sub", "more.json"), JSON.stringify({ remote: { host: "localhost" }, list: [{ ip: "::1" }] }));
+    fs.writeFileSync(path.join(dir, "notes.txt"), "address: 127.0.0.1");
+    const out = pointSettings(dir, new Set(["127.0.0.1", "localhost", "::1"]), "192.0.2.77");
+    assert.deepEqual(out.map((c) => c.file + ":" + c.key).sort(), ["config.json:address", "sub/more.json:list.0.ip", "sub/more.json:remote.host"]);
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8"));
+    assert.equal(cfg.address, "192.0.2.77");
+    assert.equal(cfg.note, "127.0.0.1", "only address-like keys change");
+    assert.equal(cfg.tv.host, "192.0.2.5", "other devices' addresses stay");
+    assert.equal(fs.readFileSync(path.join(dir, "notes.txt"), "utf8"), "address: 127.0.0.1", "only JSON files");
+    pointSettings(dir, new Set(["192.0.2.77"]), "127.0.0.1");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8")).address, "127.0.0.1");
+    console.log("  127.0.0.1 / localhost under address, host or ip keys switched both ways; other values and files untouched");
+  }
   console.log("\nMOVE: all passed");
 } catch (e) {
   failed = true;

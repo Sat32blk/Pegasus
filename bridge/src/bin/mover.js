@@ -26,7 +26,7 @@ import { createTarGz } from "./tar.js";
 import { RemoteOps } from "./remote.js";
 
 /** Integrations that must stay on the remote (they control the remote itself). */
-export const STAYS = new Set(["pegasis_bridge", "self_control"]);
+export const STAYS = new Set(["pegasis_bridge"]); // the Bridge itself; everything else talks to the remote over its API
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class Mover {
@@ -175,7 +175,7 @@ export class Mover {
     return list.map((i) => ({
       ...i,
       movable: i.type === "CUSTOM" && !STAYS.has(i.driver_id) && /github\.com\//.test(i.home_page),
-      why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "controls the remote itself" : !/github\.com\//.test(i.home_page) ? "no GitHub home page to get its code from" : null,
+      why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "this is the Bridge itself" : !/github\.com\//.test(i.home_page) ? "no GitHub home page to get its code from" : null,
       move: this.state.moves[i.driver_id] ? this.summary()[i.driver_id] : null
     }));
   }
@@ -197,7 +197,7 @@ export class Mover {
     const d = await remote.driver(driverId);
     if (!d) throw new Error("not installed on the remote");
     if (d.driver_type !== "CUSTOM") throw new Error(`it is a ${String(d.driver_type).toLowerCase()} integration, not one installed on the remote`);
-    if (STAYS.has(driverId)) throw new Error("it controls the remote itself and has to stay there");
+    if (STAYS.has(driverId)) throw new Error("the Bridge itself has to stay on the remote");
     const homePage = d.home_page || d.developer?.url || "";
     if (!/github\.com\//.test(homePage)) throw new Error("it has no GitHub home page to get its code from");
     const inst = (await remote.instancesOf(driverId))[0] || null;

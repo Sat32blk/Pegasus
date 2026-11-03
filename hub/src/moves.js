@@ -59,12 +59,22 @@ export function registerMoveHandlers({ link, store, sup, mgr, log, sources = {} 
     return { ok: true };
   });
 
-  link.handle("move.importSettings", async ({ hubId, config = [], data = [] }) => {
+  link.handle("move.importSettings", async ({ hubId, config = [], data = [] }, from) => {
     const m = meta(hubId);
     await sup.stop(hubId);
     writeTree(store.configDir(hubId), config);
     writeTree(m.ownDataDir ? store.dataDirOf(hubId) : store.configDir(hubId), data);
     sup.note(hubId, `settings from the remote put in place (${config.length} config, ${data.length} data files)`);
+    // integrations that talk to the remote itself (127.0.0.1 on the remote) must now use its address
+    const remoteAddr = from?.address;
+    if (remoteAddr) {
+      const changed = pointSettings(store.configDir(hubId), LOOPBACK, remoteAddr);
+      if (changed.length) {
+        m.loopbackRewritten = { address: remoteAddr, places: changed };
+        store.put(m);
+        sup.note(hubId, `it talks to the remote itself: ${changed.map((c) => c.file + " " + c.key).join(", ")} now ${remoteAddr} instead of 127.0.0.1`);
+      }
+    }
     await sup.start(hubId);
     const until = Date.now() + 90000;
     while (sup.info(hubId).state !== "running") {
@@ -94,6 +104,8 @@ export function registerMoveHandlers({ link, store, sup, mgr, log, sources = {} 
     if (!root) throw new Error(`the release of ${m.name} is not a custom-integration archive (no driver.json)`);
     // the integration's current settings go in its config/ and data/ folders
     copyTree(store.configDir(hubId), path.join(root, "config"));
+    // and back on the remote it talks to itself again
+    if (m.loopbackRewritten) pointSettings(path.join(root, "config"), new Set([m.loopbackRewritten.address]), "127.0.0.1");
     if (m.ownDataDir) copyTree(store.dataDirOf(hubId), path.join(root, "data"));
     const out = path.join(work, `${m.driverId}-${m.version}-with-settings.tar.gz`);
     const top = fs.readdirSync(root).filter((n) => ["driver.json", "bin", "config", "data"].includes(n));
@@ -136,13 +148,60 @@ export function githubRepo(url) {
 }
 
 /** The repository's tag for a version: v1.2.3 or 1.2.3 (or the newest tag if none matches exactly). */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+const ADDRESS_KEYS = /^(address|host|hostname|ip|remote_?address|remoteAddress|remote_?host|remoteHost)$/i;
+
+/**
+ * Replaces address settings in a folder's JSON files: every string value under an address-like
+ * key that is in `from` becomes `to`. Returns what changed ({ file, key }).
+ */
+export function pointSettings(dir, from, to) {
+  const changed = [];
+  const walk = (o, keyPath, file) => {
+    if (!o || typeof o !== "object") return false;
+    let any = false;
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v === "string" && ADDRESS_KEYS.test(k) && from.has(v.trim())) {
+        o[k] = to;
+        changed.push({ file, key: [...keyPath, k].join(".") });
+        any = true;
+      } else if (v && typeof v === "object") any = walk(v, [...keyPath, k], file) || any;
+    }
+    return any;
+  };
+  const files = [];
+  const list = (d, depth) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory() && depth < 2) list(p, depth + 1);
+      else if (e.isFile() && /\.json$/i.test(e.name) && fs.statSync(p).size < 2 * 1024 * 1024) files.push(p);
+    }
+  };
+  if (!fs.existsSync(dir)) return changed;
+  list(dir, 0);
+  for (const f of files) {
+    let j;
+    try {
+      j = JSON.parse(fs.readFileSync(f, "utf8"));
+    } catch {
+      continue;
+    }
+    if (walk(j, [], path.relative(dir, f))) fs.writeFileSync(f, JSON.stringify(j, null, 2));
+  }
+  return changed;
+}
+
 async function tagFor(url, version) {
   const { out } = await run("git", ["ls-remote", "--tags", "--refs", url], { log: () => {}, timeoutMs: 60000 });
   const tags = out.split("\n").map((l) => l.split("refs/tags/")[1]?.trim()).filter(Boolean);
   for (const t of [`v${version}`, String(version), `V${version}`]) if (tags.includes(t)) return t;
   const loose = tags.find((t) => t.replace(/^v/i, "") === String(version).replace(/^v/i, ""));
   if (loose) return loose;
-  throw new InstallError(`the repository has no release tag for version ${version}`);
+  const base = String(version).replace(/^v/i, "").split(/[-+]/)[0];
+  const hint = base !== String(version).replace(/^v/i, "") && tags.some((t) => t.replace(/^v/i, "") === base)
+    ? `; the remote runs a test build (${version}). Install the ${base} release on the remote first, then move it`
+    : "";
+  throw new InstallError(`the repository has no release tag for version ${version}${hint}`);
 }
 
 /** The release asset to install on the remote (a .tar.gz, preferring aarch64 / arm64 builds). */

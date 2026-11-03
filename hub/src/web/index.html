@@ -378,6 +378,22 @@ const fmtRate = (b) => b == null ? "—" : fmtBytes(b) + "/s";
 const fmtMs = (ms) => ms == null ? "—" : ms < 10 ? ms.toFixed(1) + " ms" : ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(1) + " s";
 const fmtN = (n) => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? (n / 1000).toFixed(n < 1e4 ? 1 : 0) + "k" : (n / 1e6).toFixed(1) + "M";
 
+/** Copies text; the Clipboard API only works on https or localhost, so fall back to the old way. */
+async function copyText(t) {
+  if (navigator.clipboard && window.isSecureContext) { try { await navigator.clipboard.writeText(t); return true; } catch {} }
+  const ta = document.createElement("textarea");
+  ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); return ok;
+}
+document.addEventListener("click", async (e) => {
+  const c = e.target.closest("[data-copy]"); if (!c) return;
+  e.preventDefault(); e.stopPropagation();
+  const ok = await copyText(c.dataset.copy);
+  toast(ok ? `Copied ${c.dataset.what || ""}`.trim() : "Couldn't copy: select it and press Ctrl+C", !ok);
+  if (ok) { const old = c.textContent; c.textContent = "✓ Copied"; setTimeout(() => (c.textContent = old), 1500); }
+}, true);
 function toast(t, bad) { const el = $("#toast"); el.textContent = t; el.classList.toggle("bad", !!bad); el.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), bad ? 6000 : 2800); }
 const fail = (e) => toast(e.message || String(e), true);
 
@@ -445,7 +461,8 @@ function render() {
   const crashed = items.filter((m) => m.status.state === "crashed");
   const noAccess = st.remotes.filter((r) => r.access === false);
   $("#banner").innerHTML =
-    (!st.remotes.length ? `<div class="banner warn"><span>📱</span><span><b>No remote is linked.</b> Install Pegasis Bridge on your remote so these integrations show up there.</span><button class="btn primary" data-a="pair">Pair a remote</button></div>` : "") +
+    (!st.remotes.length ? `<div class="banner warn" style="flex-wrap:wrap"><span>📱</span><span style="flex:1;min-width:220px"><b>No remote is linked.</b> In Pegasis Bridge's setup on the remote, paste the hub address and the pairing code.</span>
+      <button class="btn" data-copy="${esc(location.hostname + ":" + st.pairing.port)}" data-what="the hub address">Copy address</button><button class="btn" data-copy="${esc(st.pairing.token)}" data-what="the pairing code">Copy code</button><button class="btn primary" data-a="pair" style="margin-left:0">How to pair</button></div>` : "") +
     noAccess.map((r) => `<div class="banner bad"><span>🔑</span><span><b>${esc(r.remote)}: the Bridge has no access to the remote.</b> Run the Bridge's setup again on the remote and enter the web-configurator PIN.</span></div>`).join("") +
     crashed.map((m) => `<div class="banner warn"><span>⚠</span><span><b>${esc(m.name)} keeps crashing</b> (${m.status.restarts} restarts). Its devices are unavailable on the remotes.</span><button class="btn" data-a="logs" data-id="${esc(m.id)}">See the log</button></div>`).join("");
   renderTiles();
@@ -510,21 +527,22 @@ function showIntegrations() {
       <td><span class="status st-${esc(m.status.state)}">${STATE[m.status.state] || esc(m.status.state)}</span></td>
       <td class="num">${m.usage?.cpu != null ? m.usage.cpu.toFixed(1) + "%" : "—"}</td><td class="num">${m.usage ? m.usage.memMB + " MB" : "—"}</td>
       <td>${(m.shownAs || []).map((r) => r.id ? `<span class="ck">●</span> ${esc(shortName(r.remote))}` : `<span class="wt">●</span> ${esc(r.problem)}`).join("<br>") || "—"}</td></tr>`).join("");
-    const custom = list.filter((i) => i.type === "CUSTOM");
+    const custom = list.filter((i) => i.type === "CUSTOM" && i.driver_id !== "pegasis_bridge");
+    const bridgeSlot = list.some((i) => i.type === "CUSTOM" && i.driver_id === "pegasis_bridge") ? 1 : 0;
     const builtin = list.filter((i) => i.type === "LOCAL" && i.instance);
     const other = list.filter((i) => i.type === "EXTERNAL" && !fromHub.has(i.driver_id));
     const row = (i, note) => `<tr><td><b>${esc(i.name)}</b> <span class="sub2" style="display:inline">${esc(i.version)}</span></td><td>${note}</td></tr>`;
     $("#winBody").innerHTML = `
       <div class="netgrid">
         <div class="stat"><div class="k">On the hub</div><div class="v">${items.length}</div><div class="sub2">${items.filter((m) => m.status.state === "running").length} running</div></div>
-        <div class="stat"><div class="k">Installed on the remote</div><div class="v">${custom.length}<small> of 10 slots</small></div><div class="sub2">${10 - custom.length} free</div></div>
+        <div class="stat"><div class="k">Installed on the remote</div><div class="v">${custom.length + bridgeSlot}<small> of 10 slots</small></div><div class="sub2">${10 - custom.length - bridgeSlot} free${bridgeSlot ? " · 1 is Pegasis Bridge" : ""}</div></div>
         <div class="stat"><div class="k">Built into the remote</div><div class="v">${builtin.length}</div><div class="sub2">don't use slots</div></div>
         <div class="stat"><div class="k">Other external</div><div class="v">${other.length}</div><div class="sub2">run elsewhere</div></div>
       </div>
       <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>On the hub</h4><span class="sub2" style="margin:0">no install slots used</span></div>
         ${items.length ? `<div class="tablewrap"><table><thead><tr><th></th><th>Integration</th><th>Status</th><th class="num">CPU</th><th class="num">Memory</th><th>Shown on</th></tr></thead><tbody>${hubRows}</tbody></table></div>` : '<p class="sub2">Nothing yet.</p>'}</div>
       <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Installed on ${esc(r0 ? shortName(r0.remote) : "the remote")}</h4>
-        <span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < custom.length ? "used" : ""}"></i>`).join("")}</span></span></div>
+        <span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < custom.length + bridgeSlot ? "used" : ""}"></i>`).join("")}</span>${bridgeSlot ? "including Pegasis Bridge" : ""}</span></div>
         ${custom.length ? `<div class="tablewrap"><table><tbody>${custom.map((i) => row(i, i.movable ? '<span class="ck">can move to the hub</span>' : `<span class="xx">${esc(i.why || "stays on the remote")}</span>`)).join("")}</tbody></table></div>` : `<p class="sub2">${r0 ? "None." : "No remote linked."}</p>`}</div>
       ${builtin.length || other.length ? `<div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Built in and other</h4></div><div class="tablewrap"><table><tbody>${builtin.map((i) => row(i, "built into the remote")).join("")}${other.map((i) => row(i, "external, not from this hub")).join("")}</tbody></table></div></div>` : ""}
       <p class="sub2">Move integrations between the remote and the hub in the remote's section on the main page.</p>`;
@@ -655,6 +673,9 @@ function friendlyMoveError(err) {
   if (/not linked|link lost|link closed/i.test(e)) return "The remote's link to the hub dropped during the move.";
   if (/maximum custom|no free (install )?slot/i.test(e)) return "There's no free install slot on the remote. Move another integration to the hub first.";
   if (/checksum/i.test(e)) return "The package from the hub arrived damaged.";
+  if ((m = /runs a test build \(([^)]+)\)\. Install the ([^ ]+) release/.exec(e))) return `The remote runs a test build (${esc(m[1])}) that has no release on GitHub, so the hub can't install the same version. Install the ${esc(m[2])} release on the remote first, then move it.`;
+  if (/no release tag for version/i.test(e)) return "Its GitHub repository has no release for the version on your remote, so the hub can't install the same version.";
+  if (/no GitHub release/i.test(e)) return "Its GitHub repository has no release package for this version, so it can't be moved back automatically. The integration's author (or you) needs to publish that release first.";
   if (/has no .*tar\.gz/i.test(e)) return "Its GitHub release has no package for the remote, so it can't be moved back automatically.";
   if ((m = /HTTP (\d{3})/.exec(e))) return `The remote refused one of the changes (HTTP ${m[1]}).`;
   return esc(e.length > 180 ? e.slice(0, 177) + "…" : e);
@@ -700,14 +721,14 @@ function renderRemotes() {
       // on the hub: registered from the hub, or a move involving it is under way / stopped
       const isHub = (i) => fromHub.has(i.driver_id) || standIns.has(i.driver_id) || (moves[i.driver_id] && moves[i.driver_id].status !== "done" && i.type !== "LOCAL") || (i.type === "EXTERNAL" && moves[i.driver_id]?.dir === "toHub");
       const hub = list.filter(isHub).sort(byName);
-      const installed = list.filter((i) => i.type === "CUSTOM" && !hub.includes(i)).sort(byName);
+      const installed = list.filter((i) => i.type === "CUSTOM" && !hub.includes(i) && i.driver_id !== "pegasis_bridge").sort(byName);
       const rest = list.filter((i) => i.type !== "CUSTOM" && !hub.includes(i) && (i.type !== "LOCAL" || i.instance)).sort(byName);
       rows = (hub.length ? `<div class="rgroup">Running on the hub</div>${hub.map(one).join("")}` : "")
         + (installed.length ? `<div class="rgroup">Installed on the remote</div>${installed.map(one).join("")}` : "")
         + (rest.length ? `<details class="more" data-remote="${esc(r.remote)}" ${openDetails.has(r.remote) ? "open" : ""}><summary>${rest.length} built-in and other integrations (they don't use install slots)</summary>${rest.map(one).join("")}</details>` : "");
     }
     return `<section class="card"><div class="listhead"><h2>On ${esc(shortName(r.remote))}</h2>
-      ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used</span>`}
+      ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used${list.some((i) => i.driver_id === "pegasis_bridge" && i.type === "CUSTOM") ? " (one by Pegasis Bridge)" : ""}</span>`}
       <button class="btn" style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div>${rows}</section>`;
   }).join("");
 }
@@ -949,18 +970,17 @@ function showRemotes(tab) {
   openWin({ kind: "remotes", title: "Remotes", tabs: [["linked", "Linked remotes"], ["pair", "Pair a remote"]], tab,
     body: tab === "linked" ? `<div class="tablewrap" style="border:0"><table class="rtable"><thead><tr><th>Remote</th><th>Link</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="pair">
-          <div class="pairbox"><button class="copy" data-copy="${esc(addr)}">Copy</button><div class="k">Hub address</div><div class="v">${esc(addr)}</div></div>
-          <div class="pairbox"><button class="copy" data-copy="${esc(st.pairing.token)}">Copy</button><div class="k">Pairing code</div><div class="v">${esc(st.pairing.token)}</div></div>
+          <div class="pairbox"><button class="copy" data-copy="${esc(addr)}" data-what="the hub address">Copy</button><div class="k">Hub address (IP : port)</div><div class="v">${esc(addr)}</div></div>
+          <div class="pairbox"><button class="copy" data-copy="${esc(st.pairing.token)}" data-what="the pairing code">Copy</button><div class="k">Pairing code (key)</div><div class="v">${esc(st.pairing.token)}</div></div>
         </div>
         <ol class="howto">
           <li>In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload the Pegasis Bridge archive.</li>
-          <li>Start its setup and enter the address and code above, plus the web-configurator PIN.</li>
+          <li>Start its setup. Paste the <b>hub address</b> and the <b>pairing code</b> with the Copy buttons above, and enter the web-configurator PIN.</li>
           <li>The remote appears here, and everything on the hub shows up on it.</li>
         </ol>
         <div class="banner warn" style="margin:14px 0 0"><span>🔑</span><span>Anyone with this code can link a remote to the hub.</span><button class="btn" id="regen">New code</button></div>` });
   $("#winTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b) showRemotes(b.dataset.tab); };
   $("#winBody").onclick = async (e) => {
-    const c = e.target.closest("[data-copy]"); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); toast("Copied"); } catch { toast("Select it and copy by hand", true); } return; }
     const bt = e.target.closest("[data-battery]"); if (bt) return showBattery(bt.dataset.battery, 7);
     const bl = e.target.closest("[data-blog]"); if (bl) return showLogs(null, bl.dataset.blog);
     if (e.target.id === "regen") {
