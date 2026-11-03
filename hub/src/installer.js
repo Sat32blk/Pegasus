@@ -160,32 +160,65 @@ export class Installer {
       await run(pip, ["install", "--no-cache-dir", "--disable-pip-version-check", "."], { cwd: projDir, log });
     }
 
-    // Find the entry point: a driver.py (prefer intg-*/, src/, uc_intg_*/ folders), else a package __main__.py
-    const drivers = files.filter((f) => path.basename(f) === "driver.py" && f.startsWith(projDir));
-    const score = (f) => (/[\\/](intg[-_][^\\/]*|src|uc_intg[^\\/]*)[\\/]driver\.py$/.test(f) ? 0 : 1) * 100 + depth(projDir, f);
-    drivers.sort((a, b) => score(a) - score(b));
+    // Find the entry point, most reliable first:
+    //  1. the integration's own Dockerfile command (how its author runs it)
+    //  2. a package that runs as a whole (has __main__.py)
+    //  3. a driver.py that runs when started (has an `if __name__ == "__main__"` block)
+    //  4. any driver.py (prefer intg-*/, src/, uc_intg_*/ folders)
     // Drivers usually open "driver.json" relative to the working folder and are started from the
     // folder that holds it (e.g. `python src/driver.py` from the repo root), so run from there.
     const cwd = jsonDir && jsonDir.startsWith(projDir) ? jsonDir : projDir;
-    let command;
-    let pythonPath = [];
-    if (drivers.length) {
-      const d = drivers[0];
-      const pkgDir = path.dirname(d);
-      if (fs.existsSync(path.join(pkgDir, "__init__.py")) && !/[\\/]src$/.test(pkgDir)) {
-        // a package: run as a module so its relative imports work
-        command = [py, "-m", `${path.basename(pkgDir)}.driver`];
-        pythonPath = [rel(root, path.dirname(pkgDir))];
-      } else {
-        command = [py, rel(cwd, d)];
+    const inProj = (f) => f.startsWith(projDir) && !/[\\/](tests?|docs?|examples?)[\\/]/.test(rel(projDir, f));
+    const asModule = (pkgDir, sub) => ({ command: [py, "-m", sub ? `${path.basename(pkgDir)}.${sub}` : path.basename(pkgDir)], pythonPath: [rel(root, path.dirname(pkgDir))] });
+    const runsItself = (f) => /if\s+__name__\s*==\s*["']__main__["']/.test(fs.readFileSync(f, "utf8"));
+    let pick = null;
+    let why = "";
+
+    const dockerfile = path.join(projDir, "Dockerfile");
+    if (fs.existsSync(dockerfile)) {
+      const cmd = dockerCommand(fs.readFileSync(dockerfile, "utf8"));
+      const i = cmd ? cmd.findIndex((a) => /^python[0-9.]*$/.test(path.basename(a))) : -1;
+      if (i >= 0) {
+        const rest = cmd.slice(i + 1).filter((a) => !/^-[uBOI]+$/.test(a));
+        if (rest[0] === "-m" && rest[1]) {
+          const parts = rest[1].split(".");
+          const pkgDir = files.map((f) => path.dirname(f)).find((d) => path.basename(d) === parts[0] && inProj(path.join(d, "x")) && fs.existsSync(path.join(d, "__init__.py")));
+          if (pkgDir) {
+            pick = { command: [py, "-m", rest[1], ...rest.slice(2)], pythonPath: [rel(root, path.dirname(pkgDir))] };
+            why = "its Dockerfile";
+          }
+        } else if (rest[0] && /\.py$/.test(rest[0])) {
+          const f = path.resolve(projDir, rest[0]);
+          if (fs.existsSync(f)) {
+            // in Docker the project folder is the working folder, so its own packages import
+            pick = { command: [py, rel(cwd, f), ...rest.slice(1)], pythonPath: [rel(root, projDir)] };
+            why = "its Dockerfile";
+          }
+        }
       }
-    } else {
-      const mains = files.filter((f) => path.basename(f) === "__main__.py" && f.startsWith(projDir));
-      if (!mains.length) throw new InstallError("Python project without driver.py or __main__.py");
-      const pkgDir = path.dirname(mains[0]);
-      command = [py, "-m", path.basename(pkgDir)];
-      pythonPath = [rel(root, path.dirname(pkgDir))];
     }
+    if (!pick) {
+      const mains = files.filter((f) => path.basename(f) === "__main__.py" && inProj(f)).sort((a, b) => depth(projDir, a) - depth(projDir, b));
+      const withDriver = mains.find((f) => fs.existsSync(path.join(path.dirname(f), "driver.py"))) || mains[0];
+      if (withDriver && fs.existsSync(path.join(path.dirname(withDriver), "__init__.py"))) {
+        pick = asModule(path.dirname(withDriver));
+        why = "its package entry point";
+      }
+    }
+    if (!pick) {
+      const drivers = files.filter((f) => path.basename(f) === "driver.py" && inProj(f));
+      const score = (f) => (runsItself(f) ? 0 : 1000) + (/[\\/](intg[-_][^\\/]*|src|uc_intg[^\\/]*)[\\/]driver\.py$/.test(f) ? 0 : 100) + depth(projDir, f);
+      drivers.sort((a, b) => score(a) - score(b));
+      const d = drivers[0];
+      if (d) {
+        const pkgDir = path.dirname(d);
+        pick = fs.existsSync(path.join(pkgDir, "__init__.py")) && !/[\\/]src$/.test(pkgDir) ? asModule(pkgDir, "driver") : { command: [py, rel(cwd, d)], pythonPath: [rel(root, projDir)] };
+        why = runsItself(d) ? "its driver.py" : "its driver.py (it may need a start command in Settings)";
+      }
+    }
+    if (!pick) throw new InstallError("Python project without driver.py or __main__.py; set its start command in Settings");
+    const { command, pythonPath } = pick;
+    log(`entry point from ${why}`);
     log(`runtime: Python (${command.slice(1).join(" ")} in ${rel(root, cwd) || "."})`);
     return { runtime: "python", command: command.map((c) => (c === py ? "$VENV/bin/python" : c)), cwd: rel(root, cwd), pythonPath };
   }
@@ -194,6 +227,25 @@ export class Installer {
   latest(source, log) {
     return source?.type === "git" ? latestTag(source.url, log) : Promise.resolve(null);
   }
+}
+
+/** The command of a Dockerfile's last CMD (or ENTRYPOINT + CMD), as an argument list, or null. */
+export function dockerCommand(text) {
+  const lines = text.replace(/\\\r?\n/g, " ").split(/\r?\n/);
+  const last = (kw) => lines.filter((l) => new RegExp(`^\\s*${kw}\\s`, "i").test(l)).map((l) => l.replace(new RegExp(`^\\s*${kw}\\s+`, "i"), "").trim()).at(-1);
+  const parse = (v) => {
+    if (!v) return [];
+    if (v.startsWith("[")) {
+      try {
+        return JSON.parse(v).map(String);
+      } catch {
+        return [];
+      }
+    }
+    return v.split(/\s+/);
+  };
+  const cmd = [...parse(last("ENTRYPOINT")), ...parse(last("CMD"))].filter((a) => !/^(\/usr\/bin\/)?(tini|dumb-init|--)$/.test(a));
+  return cmd.length ? cmd : null;
 }
 
 function nameOf(driver) {
