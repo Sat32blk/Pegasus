@@ -8,7 +8,7 @@ Nothing goes to GitHub until the owner says push.
 - Every push to `main` updates `:latest`.
 - A tag like `v0.2.0` also publishes `:0.2.0` and `:0.2`, sets the version shown on the hub page, and builds the Bridge archive (download it from the workflow run and attach it to the release).
 
-**One-time step:** the first published image is private. Open github.com/Sat32blk → **Packages** → **pegasis-hub** → **Package settings** → **Change visibility** → **Public**.
+**One-time step:** the first published image is private. Open github.com/Sat32blk → **Packages** → **pegasus-hub** → **Package settings** → **Change visibility** → **Public**.
 
 ## Making a release
 
@@ -21,9 +21,9 @@ Nothing goes to GitHub until the owner says push.
 
 ```sh
 cd hub
-docker build -t pegasis-hub:local .
+docker build -t pegasus-hub:local .
 ```
-then use `image: pegasis-hub:local` in the compose file.
+then use `image: pegasus-hub:local` in the compose file.
 
 ## Never commit
 
