@@ -112,6 +112,7 @@ export class Manager extends EventEmitter {
         env: old?.env || {},
         autostart: old ? old.autostart : true,
         hold: opts.hold ? true : old?.hold || false,
+        keepConnected: old?.keepConnected || false,
         ownDataDir: old ? !!old.ownDataDir : true,
         source: fetched.source,
         installedAt: old?.installedAt || Date.now(),
@@ -138,10 +139,11 @@ export class Manager extends EventEmitter {
     this.emit("changed");
   }
 
-  async setOptions(id, { autostart, command, env }) {
+  async setOptions(id, { autostart, command, env, keepConnected }) {
     const meta = this.store.get(id);
     if (!meta) throw new InstallError("Unknown integration");
     if (typeof autostart === "boolean") meta.autostart = autostart;
+    if (typeof keepConnected === "boolean") meta.keepConnected = keepConnected;
     if (command !== undefined) {
       if (command === null || command === "") {
         meta.commandOverride = null;

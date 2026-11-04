@@ -36,7 +36,7 @@ export class NetStats {
   #intg(id) {
     let s = this.intg.get(id);
     if (!s) {
-      s = { totals: newTraffic(), requests: 0, events: 0, resp: [], lastActive: null, sessionsOpened: 0, openFailed: 0, pending: new Map() };
+      s = { totals: newTraffic(), requests: 0, events: 0, resp: [], lastActive: null, sessionsOpened: 0, openFailed: 0, pending: new Map(), shaped: { unsubscribed: 0, repeat: 0, merged: 0, held: 0, standby: 0 } };
       this.intg.set(id, s);
     }
     return s;
@@ -81,6 +81,12 @@ export class NetStats {
     m.rttMin = m.rttMin == null ? ms : Math.min(m.rttMin, ms);
     r.rttRecent.push(ms);
     if (r.rttRecent.length > 200) r.rttRecent.shift();
+  }
+
+  /** Messages the hub didn't send to the remote (or held while it slept). */
+  shaped(id, kind, n = 1) {
+    const s = this.#intg(id);
+    s.shaped[kind] = (s.shaped[kind] || 0) + n;
   }
 
   sessionOpened(id) {
@@ -169,6 +175,7 @@ export class NetStats {
         events: s.events,
         sessionsOpened: s.sessionsOpened,
         openFailed: s.openFailed,
+        shaped: s.shaped,
         lastActive: s.lastActive,
         response: { n: ms.length, median: pct(ms, 0.5), p95: pct(ms, 0.95), slowest: slowest && { ms: slowest.ms, msg: slowest.msg, t: slowest.t } }
       };

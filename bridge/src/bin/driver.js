@@ -8,6 +8,7 @@
 // Setup flows, entities, commands, events and voice audio pass through byte for byte.
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,7 +197,13 @@ async function startLink() {
   });
   await mover.startControl().catch((e) => log(`move control endpoint: ${e.message}`));
   // requests from the hub page
-  link.handle("remote.integrations", () => mover.integrations());
+  // with { hash } (hub 0.6+): answers { same: true } when nothing changed, so the list isn't resent
+  link.handle("remote.integrations", async (params = {}) => {
+    const list = await mover.integrations();
+    if (params.hash === undefined) return list;
+    const hash = crypto.createHash("sha1").update(JSON.stringify(list)).digest("hex").slice(0, 16);
+    return params.hash === hash ? { same: true, hash } : { list, hash };
+  });
   link.handle("move.toHub", ({ driverId, keepSlot }) => mover.toHub(String(driverId), { keepSlot: !!keepSlot }));
   link.handle("move.toRemote", ({ driverId }) => mover.toRemote(String(driverId)));
   link.handle("move.retry", ({ driverId }) => mover.retry(String(driverId)));

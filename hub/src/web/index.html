@@ -655,10 +655,13 @@ function row(m) {
 
 /* ---------------- each linked remote: what's on it, with Move ---------------- */
 const TYPE = { CUSTOM: "installed on the remote", EXTERNAL: "external", LOCAL: "built into the remote" };
-async function loadRemote(name, force, every = 20000) {
+async function loadRemote(name, force, every = 60000) {
+  // the hub keeps one copy for every open page and asks the remote at most once a minute;
+  // a page in a background tab doesn't ask at all
+  if (document.hidden && !force) return;
   if (!force && remoteLoaded[name] && Date.now() - remoteLoaded[name] < every) return;
   remoteLoaded[name] = Date.now();
-  try { remoteLists[name] = await call("GET", `/remotes/${encodeURIComponent(name)}/integrations`); }
+  try { remoteLists[name] = await call("GET", `/remotes/${encodeURIComponent(name)}/integrations${force ? "?fresh=1" : ""}`); }
   catch (e) { remoteLists[name] = { error: e.message }; }
   renderRemotes();
 }
@@ -695,7 +698,7 @@ function renderRemotes() {
   $("#remoteSections").innerHTML = st.remotes.map((r) => {
     const moves = r.moves || {};
     const busy = Object.values(moves).some((m) => m.status === "running" || Date.now() - m.updated < 30000);
-    loadRemote(r.remote, false, busy ? 3000 : 20000);
+    loadRemote(r.remote, false, busy ? 4000 : 60000);
     const list = remoteLists[r.remote];
     const fromHub = new Set(items.flatMap((m) => (m.shownAs || []).filter((x) => x.remote === r.remote && x.id).map((x) => x.id)));
     const standIns = new Set(Object.entries(moves).filter(([, m]) => m.dir === "toHub" && m.status === "done" && m.log.some((l) => /slot is kept/.test(l))).map(([id]) => id));
@@ -896,6 +899,7 @@ function showSettings(m, tab) {
     body: `
       <div data-pane="general" ${tab !== "general" ? "hidden" : ""}>
         <div class="toggle"><div class="t"><b>Start with the hub</b><span>Starts when the container starts. Crashes are always restarted, waiting a little longer each time (up to a minute).</span></div><input type="checkbox" class="sw" id="optAuto" ${m.autostart ? "checked" : ""} aria-label="Start with the hub"></div>
+        <div class="toggle"><div class="t"><b>Stay connected while the remote sleeps</b><span>The integration isn't told the remote went to sleep, so it keeps its connection to the device and the first press after waking is quick. Its updates are held while the remote sleeps, so this costs the remote nothing. Leave it off for integrations that control the remote itself (Remote Self-Control).</span></div><input type="checkbox" class="sw" id="optKeep" ${m.keepConnected ? "checked" : ""} aria-label="Stay connected while the remote sleeps"></div>
         <dl class="kvs" style="margin-top:12px">${(m.shownAs || []).map((r) => `<dt>${esc(shortName(r.remote))}</dt><dd>${r.id ? `<span class="ck">●</span> shown as <code>${esc(r.id)}</code>` : `<span class="wt">●</span> ${esc(r.problem)}`}</dd>`).join("") || "<dt>Remotes</dt><dd>none linked</dd>"}</dl>
       </div>
       <div data-pane="run" ${tab !== "run" ? "hidden" : ""}>
@@ -919,7 +923,7 @@ function showSettings(m, tab) {
   $("#optSave").onclick = async () => {
     const envObj = Object.fromEntries($("#optEnv").value.split("\n").map((l) => l.trim()).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1)]));
     try {
-      await call("PATCH", "/integrations/" + m.id, { autostart: $("#optAuto").checked, command: $("#optCmd").value.trim(), env: envObj });
+      await call("PATCH", "/integrations/" + m.id, { autostart: $("#optAuto").checked, keepConnected: $("#optKeep").checked, command: $("#optCmd").value.trim(), env: envObj });
       await call("POST", `/integrations/${m.id}/restart`);
       toast(`Saved. ${m.name} is restarting.`); closeWin();
     } catch (e) { fail(e); }
@@ -1099,12 +1103,12 @@ function renderNetwork() {
   const ints = [...net.integrations].sort((a, b) => (b.totals.msgsIn + b.totals.msgsOut) - (a.totals.msgsIn + a.totals.msgsOut));
   const focusRow = (x) => netState.focus && x.id === netState.focus ? ' style="background:var(--accent-soft)"' : "";
   const table = ints.length ? `<div class="tablewrap"><table>
-    <thead><tr><th>Integration</th><th class="num" title="Requests from the remote (commands, browsing, entity states)">Requests</th><th class="num" title="Time the integration takes to answer, measured on the hub">Answers in</th><th class="num">95%</th><th>Slowest</th><th class="num">Events</th><th class="num">Traffic ↓ / ↑</th><th class="num">Last used</th></tr></thead>
+    <thead><tr><th>Integration</th><th class="num" title="Requests from the remote (commands, browsing, entity states)">Requests</th><th class="num" title="Time the integration takes to answer, measured on the hub">Answers in</th><th class="num">95%</th><th>Slowest</th><th class="num">Events</th><th class="num" title="Updates the hub didn't send to the remote: for devices it doesn't use, exact repeats, and ones merged while it slept">Not sent</th><th class="num">Traffic ↓ / ↑</th><th class="num">Last used</th></tr></thead>
     <tbody>${ints.map((x) => `<tr${focusRow(x)}><td><b>${esc(x.name)}</b>${x.openFailed ? `<div class="sub2 bd">${x.openFailed} failed connection${x.openFailed > 1 ? "s" : ""}</div>` : ""}</td>
       <td class="num">${fmtN(x.requests)}</td><td class="num">${fmtMs(x.response.median)}</td><td class="num">${fmtMs(x.response.p95)}</td>
       <td>${x.response.slowest ? `${fmtMs(x.response.slowest.ms)} <span class="sub2" style="display:inline">${esc(x.response.slowest.msg)}</span>` : "—"}</td>
-      <td class="num">${fmtN(x.events)}</td><td class="num">${fmtBytes(x.totals.bytesIn)} / ${fmtBytes(x.totals.bytesOut)}</td><td class="num">${x.lastActive ? ago(x.lastActive) + " ago" : "—"}</td></tr>`).join("")}</tbody></table></div>
-    <p class="sub2">"Answers in" is how long the integration takes to reply to the remote, measured on the hub. The time a button press takes is about that plus the link's round trip. Figures cover the time since the hub started.</p>` : `<p class="sub2">No integration has been used through the link yet.</p>`;
+      <td class="num">${fmtN(x.events)}</td><td class="num" title="${x.shaped ? `${x.shaped.unsubscribed} for unused devices · ${x.shaped.repeat} repeats · ${x.shaped.merged} merged while asleep (${x.shaped.held} held)${x.shaped.standby ? ` · ${x.shaped.standby} standby notices kept back` : ""}` : ""}">${x.shaped ? fmtN(x.shaped.unsubscribed + x.shaped.repeat + x.shaped.merged) : "—"}</td><td class="num">${fmtBytes(x.totals.bytesIn)} / ${fmtBytes(x.totals.bytesOut)}</td><td class="num">${x.lastActive ? ago(x.lastActive) + " ago" : "—"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="sub2">"Not sent" counts updates the hub kept from the remote: for devices it doesn't use, exact repeats, and ones merged while it slept (point at a number for the breakdown). "Answers in" is how long the integration takes to reply to the remote, measured on the hub. The time a button press takes is about that plus the link's round trip. Figures cover the time since the hub started.</p>` : `<p class="sub2">No integration has been used through the link yet.</p>`;
 
   const keep = $("#winBody").scrollTop;
   $("#winBody").innerHTML = `
@@ -1117,9 +1121,10 @@ function renderNetwork() {
 }
 
 /* ---------------- start ---------------- */
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 applyTheme();
 refresh().then(() => { refreshNet(); refreshRes(); refreshBattery(); });
-setInterval(() => { if (!win.kind || win.kind === "network") refresh(); }, 3000);
+setInterval(() => { if (!document.hidden && (!win.kind || win.kind === "network")) refresh(); }, 3000);
 setInterval(() => { if (!netState.open) refreshNet(); if (win.kind !== "resources") refreshRes(); refreshBattery(); }, 15000);
 </script>
 </body>

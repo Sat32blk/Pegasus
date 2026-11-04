@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import { redact } from "./redact.js";
 import { NetStats } from "./netstats.js";
+import { SessionShaper } from "./shaper.js";
 import { Rpc } from "./linkproto.js";
 import { T, PROTO_VERSION, pingPayload, pingTime, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
 
@@ -215,16 +216,19 @@ export class LinkServer {
       }
       case T.STATUS: {
         const st = parseJson(payload) || {};
+        const before = JSON.stringify([link.registered, link.moves && Object.fromEntries(Object.entries(link.moves).map(([k, v]) => [k, v.status]))]);
         if (st.registered && typeof st.registered === "object") link.registered = st.registered;
         if (st.problems && typeof st.problems === "object") link.problems = st.problems;
         if (st.notes && typeof st.notes === "object") link.notes = st.notes;
         if (typeof st.access === "boolean") link.access = st.access;
         if (st.moves && typeof st.moves === "object") link.moves = st.moves;
+        if (JSON.stringify([link.registered, link.moves && Object.fromEntries(Object.entries(link.moves).map(([k, v]) => [k, v.status]))]) !== before) this.onRemoteChange?.(link.remote);
         if (Array.isArray(st.battery) && st.battery.length && this.battery) this.battery.add(link.remote, st.battery.slice(-5000));
         if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
           link.standbySince = Date.now();
+          if (!st.standby) this.#deliverHeld(link);
         }
         return;
       }
@@ -236,6 +240,10 @@ export class LinkServer {
         if (!s) return;
         const isBin = type === T.BIN;
         this.net.message(s.id, channel, "in", payload, !isBin);
+        if (!isBin && s.shaper) {
+          const p2 = s.shaper.fromRemote(payload);
+          if (!p2) return; // e.g. standby kept from an integration set to stay connected
+        }
         if (s.driverWs.readyState === WebSocket.OPEN) s.driverWs.send(payload, { binary: isBin });
         else if (s.driverWs.readyState === WebSocket.CONNECTING) {
           s.queued += payload.length;
@@ -255,6 +263,19 @@ export class LinkServer {
     }
   }
 
+  /** On wake: everything held for this remote while it slept, per session, in one go. */
+  #deliverHeld(link) {
+    let n = 0;
+    for (const [ch, s] of link.sessions) {
+      if (!s.shaper?.hasHeld()) continue;
+      for (const out of s.shaper.flush()) {
+        this.#tx(link, encode(T.TEXT, ch, out));
+        n++;
+      }
+    }
+    if (n) this.log(`${link.remote} woke up: delivered ${n} held update(s)`);
+  }
+
   #open(link, channel, remoteId) {
     const meta = this.store.list().find((m) => remoteDriverId(m.id) === remoteId || m.id === remoteId);
     if (!meta) return this.#tx(link, encode(T.OPEN_FAIL, channel, `not installed: ${remoteId}`));
@@ -263,7 +284,14 @@ export class LinkServer {
       return this.#tx(link, encode(T.OPEN_FAIL, channel, `${meta.name} is ${state}`));
     }
     const driverWs = new WebSocket(`ws://127.0.0.1:${meta.port}/`, { perMessageDeflate: false, handshakeTimeout: 10000 });
-    const s = { driverWs, queue: [], queued: 0, id: meta.id, closed: false };
+    const s = {
+      driverWs,
+      queue: [],
+      queued: 0,
+      id: meta.id,
+      closed: false,
+      shaper: process.env.PEGASIS_SHAPING === "0" ? null : new SessionShaper({ keepConnected: () => !!this.store.get(meta.id)?.keepConnected, count: (kind, n) => this.net.shaped(meta.id, kind, n) })
+    };
     link.sessions.set(channel, s);
     this.net.sessionOpened(meta.id);
 
@@ -278,7 +306,8 @@ export class LinkServer {
       if (link.ws.readyState !== WebSocket.OPEN) return;
       const buf = Buffer.isBuffer(data) ? data : Buffer.concat(data);
       this.net.message(s.id, channel, "out", buf, !isBinary);
-      this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, buf));
+      if (isBinary || !s.shaper) return this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, buf));
+      for (const out of s.shaper.fromDriver(buf, !!link.standby)) this.#tx(link, encode(T.TEXT, channel, out));
     });
     driverWs.on("close", (code, reason) => {
       if (s.closed) return;

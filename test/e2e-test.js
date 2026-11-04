@@ -285,6 +285,31 @@ try {
     console.log(`  awake: link confirmed in ${Date.now() - t0} ms`);
   }
 
+  step("asleep: answers go at once, state updates are held and merged, delivered on wake");
+  {
+    const L = bridge.link;
+    const sh = await coreSession(dn.driver_url);
+    await sh.req("subscribe_events", { entity_ids: ["sim_switch"] });
+    L.setStandby(true);
+    await until(() => hub.link.status()[0]?.standby === true, 3000, "hub sees standby");
+    const n0 = sh.events.filter((e) => e.msg === "entity_change").length;
+    for (let i = 0; i < 3; i++) assert.equal((await sh.req("entity_command", { entity_type: "switch", entity_id: "sim_switch", cmd_id: "toggle" })).code, 200, "answer while asleep");
+    await sleep(600);
+    assert.equal(sh.events.filter((e) => e.msg === "entity_change").length, n0, "updates reached a sleeping remote");
+    L.setStandby(false);
+    const got = await until(() => { const ev = sh.events.filter((e) => e.msg === "entity_change"); return ev.length > n0 ? ev.slice(n0) : null; }, 3000, "held update on wake");
+    await sleep(300);
+    assert.equal(sh.events.filter((e) => e.msg === "entity_change").length - n0, 1, "one merged update expected");
+    const states = await sh.req("get_entity_states");
+    const real = states.msg_data.find((x) => x.entity_id === "sim_switch")?.attributes?.state;
+    assert.equal(got[0].msg_data.attributes.state, real, "the delivered update must be the final state");
+    const net = await (await fetch(`http://127.0.0.1:${hub.server.address().port}/api/network`)).json();
+    const shaped = net.integrations.find((x) => x.id === "sim_node").shaped;
+    assert.ok(shaped.held >= 1 && shaped.merged >= 2, JSON.stringify(shaped));
+    console.log(`  3 commands answered while asleep; 3 updates held and delivered as 1 on wake (state ${got[0].msg_data.attributes.state})`);
+    sh.close();
+  }
+
   step("wake with a link that died during sleep: replaced within about a second");
   {
     const L = bridge.link;

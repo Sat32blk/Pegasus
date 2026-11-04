@@ -8,6 +8,9 @@
 
 const LIMIT = 100;
 
+/** home_page and developer of installed integrations, per driver_id@version (kept across requests). */
+const DETAILS = new Map();
+
 export class RemoteOps {
   constructor(core, log = () => {}) {
     this.core = core;
@@ -39,10 +42,21 @@ export class RemoteOps {
   async integrations() {
     const drivers = await this.all("/intg/drivers");
     const instances = await this.all("/intg/instances");
-    // the list is a summary without home pages (firmware 2.x): read installed ones in full
+    // the list is a summary without home pages (firmware 2.x): read installed ones in full, once
+    // per version (the details only change when the integration does)
     const full = new Map(
       await Promise.all(
-        drivers.filter((d) => d.driver_type === "CUSTOM" && !d.home_page).map(async (d) => [d.driver_id, await this.driver(d.driver_id).catch(() => null)])
+        drivers
+          .filter((d) => d.driver_type === "CUSTOM" && !d.home_page)
+          .map(async (d) => {
+            const key = `${d.driver_id}@${d.version}`;
+            if (!DETAILS.has(key)) {
+              const det = await this.driver(d.driver_id).catch(() => null);
+              if (det) DETAILS.set(key, { home_page: det.home_page, developer: det.developer });
+              return [d.driver_id, det];
+            }
+            return [d.driver_id, DETAILS.get(key)];
+          })
       )
     );
     return drivers.map((d0) => {

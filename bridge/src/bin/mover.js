@@ -175,8 +175,8 @@ export class Mover {
     return list.map((i) => ({
       ...i,
       movable: i.type === "CUSTOM" && !STAYS.has(i.driver_id) && /github\.com\//.test(i.home_page),
-      why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "this is the Bridge itself" : !/github\.com\//.test(i.home_page) ? "no GitHub home page to get its code from" : null,
-      move: this.state.moves[i.driver_id] ? this.summary()[i.driver_id] : null
+      why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "this is the Bridge itself" : !/github\.com\//.test(i.home_page) ? "no GitHub home page to get its code from" : null
+      // (move progress travels in the status report; not repeated here)
     }));
   }
 

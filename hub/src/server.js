@@ -43,6 +43,37 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
   const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
 
+  // One copy of each remote's integration list for every open page. Reading it costs the remote
+  // work and Wi-Fi time, so: at most once a minute (every 4 s while a move runs), never while
+  // the remote sleeps, and with the last hash so an unchanged list isn't sent again.
+  const lists = new Map(); // remote -> { at, list, hash, pending }
+  async function remoteList(remote, fresh) {
+    const st = link.status().find((r) => r.remote === remote);
+    if (!st) throw new InstallError(`${remote} is not linked`);
+    const c = lists.get(remote) || {};
+    const moving = Object.values(st.moves || {}).some((mv) => mv.status === "running");
+    const ttl = moving ? 4000 : 60000;
+    if (c.list && (st.standby || (!fresh && Date.now() - c.at < ttl))) return c.list;
+    if (c.pending) return c.pending;
+    c.pending = (async () => {
+      try {
+        const r = await link.call(remote, "remote.integrations", { hash: c.hash || "" }, 30000);
+        if (Array.isArray(r)) Object.assign(c, { list: r, hash: null }); // Bridge before 0.3.7
+        else if (!r.same) Object.assign(c, { list: r.list, hash: r.hash });
+        c.at = Date.now();
+        lists.set(remote, c);
+        return c.list;
+      } finally {
+        c.pending = null;
+      }
+    })();
+    lists.set(remote, c);
+    return c.pending;
+  }
+  // a move, a catalog change or a new registration makes the next read fetch again
+  const listStale = (remote) => { const c = lists.get(remote); if (c) c.at = 0; };
+  link.onRemoteChange = listStale;
+
   /** When this remote's first integration finished moving to the hub (kept on the hub). */
   function firstMoveAt(remote) {
     const st = link.status().find((r) => r.remote === remote);
@@ -120,7 +151,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       });
     }
     if (p[0] === "remotes" && p[1] && p[2] === "integrations" && m === "GET") {
-      return send(res, 200, await link.call(p[1], "remote.integrations", {}, 30000));
+      return send(res, 200, await remoteList(p[1], url.searchParams.get("fresh") === "1"));
     }
     if (p[0] === "remotes" && p[1] && p[2] === "move" && m === "POST") {
       const b = JSON.parse((await readBody(req, 16 * 1024)).toString() || "{}");
