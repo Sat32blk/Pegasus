@@ -893,7 +893,7 @@ function showLogs(m, source) {
     lines = j.lines || []; draw();
   };
   $("#logQ").oninput = draw; $("#logErr").onchange = draw;
-  $("#logDl").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain" })); a.download = `${isBridge ? "pegasis-bridge" : m.id}-log.txt`; a.click(); };
+  $("#logDl").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain" })); a.download = `${isBridge ? "pegasus-bridge" : m.id}-log.txt`; a.click(); };
   load(); win.timer = setInterval(load, 1500);
 }
 

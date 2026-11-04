@@ -113,7 +113,7 @@ Each integration's own settings live in `data/integrations/<id>/config` and surv
 
 ### 2. The bridge (remote)
 
-1. Build: `cd bridge && sh build.sh` gives `dist/uc-intg-pegasis-bridge-0.1.0.tar.gz`. A prebuilt copy is in `dist/`.
+1. Build: `cd bridge && sh build.sh` gives `dist/uc-intg-pegasus-bridge-0.1.0.tar.gz`. A prebuilt copy is in `dist/`.
 2. Web configurator → Integrations → Add new → **Install custom** → upload the archive.
 3. Start its setup and enter the **hub address**, the **pairing code** (both shown on the hub's page) and the **web-configurator PIN**.
 4. Every hub integration now appears under **Integrations**. Open one and run its setup, exactly as if it were installed on the remote.

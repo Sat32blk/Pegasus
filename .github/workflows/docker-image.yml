@@ -102,5 +102,5 @@ jobs:
       # The archive to attach to the GitHub release (the release itself is created by hand).
       - uses: actions/upload-artifact@v4
         with:
-          name: uc-intg-pegasis-bridge-${{ github.ref_name }}
+          name: uc-intg-pegasus-bridge-${{ github.ref_name }}
           path: bridge/dist/*.tar.gz

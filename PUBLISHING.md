@@ -15,7 +15,7 @@ Nothing goes to GitHub until the owner says push.
 1. Bump the version in `hub/package.json`, `bridge/src/driver.json` (and its `release_date`), `bridge/package.json`, `bridge/src/bin/package.json` and `package.json`. The Bridge version must be 20 characters or fewer.
 2. `npm test`, commit and push.
 3. `git tag v0.2.0 && git push origin v0.2.0`.
-4. On GitHub, **Releases → Draft a new release**: choose the tag, list what changed, attach `uc-intg-pegasis-bridge-<version>.tar.gz`.
+4. On GitHub, **Releases → Draft a new release**: choose the tag, list what changed, attach `uc-intg-pegasus-bridge-<version>.tar.gz`.
 
 ## Building the hub without GitHub (e.g. straight on the server)
 
