@@ -2,6 +2,3 @@ node_modules/
 build/
 data/
 dist/
-__pycache__/
-.pytest_cache/
-*.pyc

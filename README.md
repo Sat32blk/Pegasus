@@ -12,12 +12,11 @@ Why:
 | **Pegasus Hub** (`hub/`) | Docker on your server (amd64 or arm64) | Installs integrations from GitHub or an archive, runs each one, restarts crashes, keeps their settings across updates. Management page on port 9600. |
 | **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. Moves integrations between the remote and the hub. |
 
-Current versions: **Hub 0.8.0**, **Bridge 0.4.0**, **Home Assistant add-on and integration 0.8.0**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
+Current versions: **Hub 0.8.1**, **Bridge 0.4.0**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
 
 ## Contents
 
 - [Quick start](#quick-start)
-- [Home Assistant](#home-assistant)
 - [Moving integrations](#moving-integrations)
 - [The hub page](#the-hub-page)
 - [Speed and battery](#speed-and-battery)
@@ -84,38 +83,6 @@ To update the Bridge later: Install custom again with **Update existing driver**
 
 - **New ones:** on the hub page, **+ Add integration**, paste a GitHub link (the newest release is used; type a tag to pin one) or upload a `.tar.gz`. It appears on the remote under Integrations; open it there and run its setup as usual.
 - **Ones already on the remote:** move them. See below.
-
-## Home Assistant
-
-Two parts, which work well together:
-
-| Part | Installed from | What it does |
-|---|---|---|
-| **Pegasus Hub add-on** (`pegasus_hub/`) | Add-on Store (Home Assistant OS / Supervised) | The hub itself, run and updated by Home Assistant, with its page in the sidebar. Use it instead of the Docker container. |
-| **Pegasus integration** (`custom_components/pegasus/`) | HACS | Entities for a hub running anywhere (the add-on, or Docker on another server). |
-
-**Add-on**
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add `https://github.com/Sat32blk/Pegasus`.
-2. Install **Pegasus Hub**, start it, and turn on **Show in sidebar**. The page opens under **Pegasus** in the sidebar.
-3. Install Pegasus Bridge on the remote and pair it as in [Quick start](#2-install-the-bridge-on-the-remote): the page shows this machine's address. Remotes connect to port 9600 on it.
-
-Options: hub name, and an optional page password for opening it directly at port 9600 (inside the sidebar Home Assistant signs you in). Everything the hub keeps is in the add-on's data and goes into Home Assistant backups (except the artwork cache).
-
-**HACS integration**
-1. **HACS → ⋮ → Custom repositories**, add `https://github.com/Sat32blk/Pegasus` as an **Integration**, then download **Pegasus** and restart Home Assistant.
-2. **Settings → Devices & services → Add integration → Pegasus**. For the add-on keep `127.0.0.1` and port `9600`; for a hub elsewhere enter its address (and its page password if it has one).
-
-You get a device for the hub, one for each linked remote and one for each integration on the hub:
-
-| Device | Entities |
-|---|---|
-| Hub | integrations running, CPU, memory, artwork saved, version; *Check for updates* button |
-| Each remote | linked, asleep, round trip, link traffic and messages, reconnects, **battery**, **battery saved** per day since your first move (with how much data it rests on), days per charge, drain while awake and asleep, the remote's load and memory |
-| Each integration on the hub | state, a **Running** switch (start/stop), problem (crashed, or not showing on a remote), CPU, memory, how fast it answers, updates not sent; a **Restart** button; an **update** entity that installs new GitHub releases |
-
-It reads the hub every 30 seconds, and only the hub's own figures: it never makes the hub ask the remote anything, so it costs the remote nothing.
-
-Both need this repository to be **public** on GitHub: Home Assistant and HACS download from it without signing in.
 
 ## Moving integrations
 
@@ -221,8 +188,6 @@ npm test
 npm run sync-proto   # after editing shared/linkproto.js
 ```
 
-`python -m pytest` (with `pytest-homeassistant-custom-component`, and `node tests_ha/demo-hubs.mjs` running) tests the Home Assistant integration against real demo hubs: setup, password and re-sign-in, every kind of entity, and start/stop/restart reaching the hub. On GitHub, hassfest, HACS's validation and the add-on linter also run.
-
 `npm test` runs: the link codec, log masking, battery figures, network statistics, resource history, event shaping, artwork, the Bridge's ID rules, **moves** against `test/mock-remote.js` (a stand-in for the remote's core that behaves like the real one: summary driver list, entity selection by the integration's own IDs, references stripped on driver deletion, no entity listing while an integration is inactive), and an **end-to-end** test (mock core ⇄ Bridge ⇄ hub ⇄ real Node and Python integrations, including standby and artwork).
 
 Run the hub without Docker: `cd hub && PEGASUS_DATA=./data node src/server.js`. Pushes to `main` run the tests and publish amd64 + arm64 images (see PUBLISHING.md).
@@ -231,6 +196,6 @@ Run the hub without Docker: `cd hub && PEGASUS_DATA=./data node src/server.js`. 
 
 - Built-in integrations stay on the remote (they don't use slots and the firmware owns them).
 - Moving back needs a GitHub release with a `.tar.gz` for the remote.
-- Ideas: keep integrations connected through short link drops, compress large messages, time a full button press end to end, pick integrations from the Unfolded Circle list, find the hub automatically in the Bridge setup and in Home Assistant.
+- Ideas: keep integrations connected through short link drops, compress large messages, time a full button press end to end, pick integrations from the Unfolded Circle list, find the hub automatically in the Bridge setup, Home Assistant support.
 
 MIT licence.

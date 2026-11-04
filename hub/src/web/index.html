@@ -367,7 +367,7 @@ async function call(method, path, body, raw) {
   const opt = { method, headers: {} };
   if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
   else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
-  const r = await fetch("api" + path, opt); // relative: works at / and behind Home Assistant's sidebar (ingress)
+  const r = await fetch("api" + path, opt); // relative: works at / and behind a reverse proxy under a sub-path
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;

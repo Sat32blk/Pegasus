@@ -121,9 +121,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       const url = new URL(req.url, "http://x");
       // artwork links are signed: the remote fetches them without the page password
       if (req.method === "GET" && url.pathname.startsWith("/img/")) return await artwork.serve(req, res, url.pathname.slice(5).split("/"));
-      // inside Home Assistant's sidebar (ingress) Home Assistant has signed the user in already
-      const viaIngress = req.headers["x-ingress-path"] && /^(::ffff:)?172\.30\.32\.2$/.test(req.socket.remoteAddress || "");
-      if (password && !viaIngress && !authOk(req, password)) {
+      if (password && !authOk(req, password)) {
         res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasus Hub"' });
         return res.end("Login required");
       }
@@ -159,7 +157,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       if (url.searchParams.get("brief") === "1") for (const r of snap.remotes) delete r.history;
       return send(res, 200, snap);
     }
-    // ?brief=1: without the per-minute histories (for Home Assistant, which polls)
+    // ?brief=1: without the per-minute histories (for tools that poll)
     if (m === "GET" && p[0] === "resources") {
       const r = resources.snapshot();
       if (url.searchParams.get("brief") === "1") {

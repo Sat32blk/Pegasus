@@ -1,7 +1,0 @@
-configuration:
-  name:
-    name: Hub name
-    description: The name your remotes show for this hub.
-  password:
-    name: Page password
-    description: Optional. Asks for a password when the hub page is opened directly at port 9600. Not needed inside Home Assistant's sidebar, which signs you in already. Remotes use the pairing code.
