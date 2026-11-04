@@ -19,6 +19,7 @@ import { LinkServer } from "./linkserver.js";
 import { BatteryStore, summarize } from "./battery.js";
 import { registerMoveHandlers } from "./moves.js";
 import { publicAddress } from "./linkserver.js";
+import { WebPages } from "./webpages.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
 import { Resources, batteryComparison } from "./resources.js";
@@ -46,6 +47,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery, artwork });
 
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
+  const webPages = new WebPages({ sup, store });
   const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
 
   // One copy of each remote's integration list for every open page. Reading it costs the remote
@@ -300,7 +302,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   }
 
   function view(meta) {
-    return { ...meta, status: sup.info(meta.id), usage: sup.usage(meta.id), shownAs: link.shownAs(meta.id) };
+    return { ...meta, status: sup.info(meta.id), usage: sup.usage(meta.id), shownAs: link.shownAs(meta.id), pages: webPages.of(meta.id) };
   }
 
   server.on("upgrade", (req, socket, head) => {
@@ -322,6 +324,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const stop = async () => {
     clearInterval(updTimer);
     resources.close();
+    webPages.close();
     link.close();
     await sup.stopAll();
     await new Promise((r) => server.close(r));

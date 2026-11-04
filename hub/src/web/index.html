@@ -94,6 +94,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .rpill .lat{font-family:var(--mono);color:var(--mute)}
 .iconbtn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;height:34px;min-width:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
 .iconbtn:hover{border-color:var(--accent)}
+a.btn{text-decoration:none;color:inherit;display:inline-block}
 .btn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 12px;font-weight:550;font-size:13px;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -651,6 +652,7 @@ function row(m) {
     <td><div class="acts">
       ${running ? `<button class="btn" data-a="stop" data-id="${esc(m.id)}">Stop</button>` : `<button class="btn" data-a="start" data-id="${esc(m.id)}">Start</button>`}
       <button class="btn" data-a="logs" data-id="${esc(m.id)}">Logs</button>
+      ${running && m.pages?.length ? m.pages.map((pg) => `<a class="btn" href="${esc(pageUrl(pg))}" target="_blank" rel="noopener" title="${esc(m.name)}'s own page (port ${pg.port})">Open its page ↗</a>`).join("") : ""}
       <div class="menu" data-row="${esc(m.id)}"><button class="btn" data-a="menu" aria-label="More for ${esc(m.name)}" aria-haspopup="true">⋯</button>
         <div class="menu-pop">
           <button data-a="restart" data-id="${esc(m.id)}">↻ Restart</button>
@@ -693,6 +695,11 @@ function friendlyMoveError(err) {
   return esc(e.length > 180 ? e.slice(0, 177) + "…" : e);
 }
 const STEP = { "hub copy": "installing it on the hub", snapshot: "saving where it's used", "stand-in": "swapping in the stand-in", settings: "handing over its settings", "free slot": "freeing its slot", register: "registering it from the hub", instance: "selecting its entities again", restore: "putting its references back", verify: "checking every reference", "hub package": "packing it on the hub", download: "downloading it from the hub", "remove external": "removing the hub registration", "remove stand-in": "removing the stand-in", install: "installing it on the remote", "hub cleanup": "removing the hub copy" };
+/** An integration's own management page, at the address this hub page was opened with. */
+function pageUrl(pg) {
+  const host = location.hostname.includes(":") ? `[${location.hostname}]` : location.hostname;
+  return `http://${host}:${pg.port}${pg.path || "/"}`;
+}
 function moveBox(mv, i, remote) {
   const where = mv.dir === "toHub" ? "to the hub" : "back to the remote";
   if (mv.status === "failed") return `<div class="mv failed"><span class="status st-failed">Move ${where} stopped</span> <span class="sub2" style="display:inline">while ${esc(STEP[mv.step] || mv.step)}</span>
