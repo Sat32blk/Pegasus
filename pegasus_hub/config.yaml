@@ -8,16 +8,13 @@ arch:
   - amd64
 # the published hub image, tagged with this version (multi-architecture)
 image: ghcr.io/sat32blk/pegasus-hub
-init: false # the image has its own init (tini)
-startup: application
-boot: auto
+init: false # the image has its own init (tini) and a Docker health check
 # integrations find devices with mDNS / SSDP, and remotes link to port 9600 on this machine
 host_network: true
 ingress: true
 ingress_port: 9600
 panel_icon: mdi:remote-tv
 panel_title: Pegasus
-watchdog: tcp://[HOST]:9600
 backup_exclude:
   - "cache/**"
   - ".cache/**"
