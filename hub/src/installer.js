@@ -200,7 +200,8 @@ export class Installer {
     const hasLock = fs.existsSync(path.join(pkgDir, "package-lock.json"));
     const needsBuild = !!pkg.scripts?.build && (fs.existsSync(path.join(pkgDir, "tsconfig.json")) || /tsc|esbuild|rollup|webpack/.test(pkg.scripts.build));
     const npmArgs = [hasLock ? "ci" : "install", "--no-audit", "--no-fund"];
-    if (!needsBuild) npmArgs.push("--omit=dev");
+    // a build needs the dev dependencies (TypeScript etc.), which NODE_ENV=production would leave out
+    npmArgs.push(needsBuild ? "--include=dev" : "--omit=dev");
     const before = !hasLock && dayAfter(depsBefore);
     if (before) {
       log(`dependencies as of ${before.slice(0, 10)} (the release date)`);
@@ -379,7 +380,8 @@ export class Installer {
       try {
         log(`building its web page (${rel(root, d)}: npm run build)`);
         const hasLock = fs.existsSync(path.join(d, "package-lock.json"));
-        await run("npm", [hasLock ? "ci" : "install", "--no-audit", "--no-fund"], { cwd: d, log });
+        // --include=dev: the build tools are dev dependencies, and the hub runs with NODE_ENV=production
+        await run("npm", [hasLock ? "ci" : "install", "--include=dev", "--no-audit", "--no-fund"], { cwd: d, log });
         await run("npm", ["run", "build"], { cwd: d, log });
         fs.rmSync(path.join(d, "node_modules"), { recursive: true, force: true }); // only the output is needed
       } catch (e) {
