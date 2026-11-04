@@ -19,6 +19,7 @@ import { registerMoveHandlers } from "./moves.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
 import { Resources, batteryComparison } from "./resources.js";
+import { Artwork } from "./artwork.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // PEGASIS_VERSION is set by the image build (release tag, or dev-<commit> for main-branch builds)
@@ -38,7 +39,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   if (scrubbed) say(`masked API keys, passwords and tokens in ${scrubbed} older log file(s)`);
   const mgr = new Manager({ store, supervisor: sup, log: say });
   const battery = new BatteryStore(dataDir);
-  const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery });
+  const artwork = new Artwork({ store, log: say });
+  const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery, artwork });
 
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
   const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
@@ -99,6 +101,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://x");
+      // artwork links are signed: the remote fetches them without the page password
+      if (req.method === "GET" && url.pathname.startsWith("/img/")) return await artwork.serve(req, res, url.pathname.slice(5).split("/"));
       if (password && !authOk(req, password)) {
         res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasis Hub"' });
         return res.end("Login required");
@@ -134,6 +138,19 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       return send(res, 200, link.net.snapshot(live, names));
     }
     if (m === "GET" && p[0] === "resources") return send(res, 200, resources.snapshot());
+    if (p[0] === "artwork") {
+      if (m === "GET" && !p[1]) return send(res, 200, artwork.summary());
+      if (m === "PATCH" && !p[1]) {
+        const before = JSON.stringify(artwork.settings);
+        artwork.setSettings(JSON.parse((await readBody(req, 4096)).toString() || "{}"));
+        if (JSON.stringify(artwork.settings) !== before) artwork.clearCache();
+        return send(res, 200, artwork.summary());
+      }
+      if (m === "POST" && p[1] === "clear") {
+        artwork.clearCache();
+        return send(res, 200, artwork.summary());
+      }
+    }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery" && p[3] === "compare") {
       const split = Number(url.searchParams.get("split")) || firstMoveAt(p[1]);
       return send(res, 200, batteryComparison(summarize, battery.samples(p[1]), split));
@@ -256,7 +273,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     await sup.stopAll();
     await new Promise((r) => server.close(r));
   };
-  return { server, store, sup, mgr, link, resources, battery, port: server.address().port, stop };
+  return { server, store, sup, mgr, link, resources, battery, artwork, port: server.address().port, stop };
 }
 
 function send(res, code, obj) {

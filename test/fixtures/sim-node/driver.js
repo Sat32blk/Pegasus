@@ -5,7 +5,9 @@ const sw = new uc.Switch("sim_switch", { en: "Sim switch" }, {
   attributes: { state: uc.SwitchStates.Off },
   cmdHandler: async (e, cmd) => {
     const next = cmd === "on" ? "ON" : cmd === "off" ? "OFF" : sw.attributes.state === "ON" ? "OFF" : "ON";
-    if (!api.updateEntityAttributes(sw.id, { state: next })) sw.attributes.state = next;
+    // SIM_IMAGE_URL (tests): send a picture link with each change, like a media integration
+    const extra = process.env.SIM_IMAGE_URL ? { media_image_url: process.env.SIM_IMAGE_URL } : {};
+    if (!api.updateEntityAttributes(sw.id, { state: next, ...extra })) sw.attributes.state = next;
     return uc.StatusCodes.Ok;
   }
 });

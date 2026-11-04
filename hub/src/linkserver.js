@@ -14,7 +14,8 @@ const HELLO_TIMEOUT_MS = 5000;
 const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 
 export class LinkServer {
-  constructor({ store, supervisor, version, log, battery, net }) {
+  constructor({ store, supervisor, version, log, battery, net, artwork }) {
+    this.artwork = artwork || null;
     this.battery = battery;
     this.net = net || new NetStats();
     this.store = store;
@@ -290,6 +291,7 @@ export class LinkServer {
       queued: 0,
       id: meta.id,
       closed: false,
+      chain: Promise.resolve(),
       shaper: process.env.PEGASIS_SHAPING === "0" ? null : new SessionShaper({ keepConnected: () => !!this.store.get(meta.id)?.keepConnected, count: (kind, n) => this.net.shaped(meta.id, kind, n) })
     };
     link.sessions.set(channel, s);
@@ -306,8 +308,14 @@ export class LinkServer {
       if (link.ws.readyState !== WebSocket.OPEN) return;
       const buf = Buffer.isBuffer(data) ? data : Buffer.concat(data);
       this.net.message(s.id, channel, "out", buf, !isBinary);
-      if (isBinary || !s.shaper) return this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, buf));
-      for (const out of s.shaper.fromDriver(buf, !!link.standby)) this.#tx(link, encode(T.TEXT, channel, out));
+      // in order, per session: artwork may need a moment (inline pictures are scaled down)
+      s.chain = s.chain.then(async () => {
+        let b = buf;
+        if (!isBinary && this.artwork) b = await this.artwork.rewrite(buf, hubBase(link)).catch(() => buf);
+        if (link.ws.readyState !== WebSocket.OPEN) return;
+        if (isBinary || !s.shaper) return this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, b));
+        for (const out of s.shaper.fromDriver(b, !!link.standby)) this.#tx(link, encode(T.TEXT, channel, out));
+      }).catch(() => {});
     });
     driverWs.on("close", (code, reason) => {
       if (s.closed) return;
@@ -352,6 +360,15 @@ export class LinkServer {
     clearInterval(this.pingTimer);
     this.disconnectAll();
   }
+}
+
+/** How the remote reaches this hub: the address and port its link connected to. */
+function hubBase(link) {
+  const sock = link.ws._socket;
+  let a = String(sock?.localAddress || "").replace(/^::ffff:/, "");
+  if (!a) return null;
+  if (a.includes(":")) a = `[${a}]`;
+  return `http://${a}:${sock.localPort}`;
 }
 
 function tokenOk(given, expected) {

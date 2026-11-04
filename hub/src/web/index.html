@@ -435,7 +435,13 @@ async function refresh() {
     $("#banner").innerHTML = `<div class="banner bad"><span>⚠</span><span><b>The hub isn't answering.</b> ${esc(e.message)}</span></div>`;
   }
 }
-async function refreshNet() { try { net = await call("GET", "/network"); renderTiles(); if (netState.open) renderNetwork(); } catch {} }
+let artNow = null;
+async function refreshNet() {
+  try {
+    [net, artNow] = await Promise.all([call("GET", "/network"), call("GET", "/artwork").catch(() => null)]);
+    renderTiles(); if (netState.open) renderNetwork();
+  } catch {}
+}
 let resNow = null;
 async function refreshRes() { try { resNow = await call("GET", "/resources"); renderTiles(); if (win.kind === "resources") renderResources(); } catch {} }
 const batt = {}; // remote -> { compare, at }
@@ -1110,13 +1116,33 @@ function renderNetwork() {
       <td class="num">${fmtN(x.events)}</td><td class="num" title="${x.shaped ? `${x.shaped.unsubscribed} for unused devices · ${x.shaped.repeat} repeats · ${x.shaped.merged} merged while asleep (${x.shaped.held} held)${x.shaped.standby ? ` · ${x.shaped.standby} standby notices kept back` : ""}` : ""}">${x.shaped ? fmtN(x.shaped.unsubscribed + x.shaped.repeat + x.shaped.merged) : "—"}</td><td class="num">${fmtBytes(x.totals.bytesIn)} / ${fmtBytes(x.totals.bytesOut)}</td><td class="num">${x.lastActive ? ago(x.lastActive) + " ago" : "—"}</td></tr>`).join("")}</tbody></table></div>
     <p class="sub2">"Not sent" counts updates the hub kept from the remote: for devices it doesn't use, exact repeats, and ones merged while it slept (point at a number for the breakdown). "Answers in" is how long the integration takes to reply to the remote, measured on the hub. The time a button press takes is about that plus the link's round trip. Figures cover the time since the hub started.</p>` : `<p class="sub2">No integration has been used through the link yet.</p>`;
 
+  const a = artNow, ast = a?.stats;
+  const saved = ast && ast.originalBytes > 0 ? 1 - ast.sentBytes / ast.originalBytes : null;
+  const artHtml = !a ? "" : `<div class="netsec"><div class="nethead" style="margin-bottom:6px"><h4>Artwork</h4><span class="sub2" style="margin:0">pictures from integrations, scaled to the remote's screen by the hub</span></div>
+    <div class="toggle"><div class="t"><b>Shrink artwork for the remote</b><span>Same proportions and size on screen, never cropped or enlarged; transparent pictures stay PNG; small ones are sent as they are. The hub keeps a copy, so the second view is instant.</span></div><input type="checkbox" class="sw" id="artOn" ${a.settings.enabled ? "checked" : ""} aria-label="Shrink artwork"></div>
+    <div class="field" style="margin:10px 0"><label for="artMax">Largest size</label>
+      <select class="inp" id="artMax" style="max-width:340px">${[[360, "360 px (smallest files)"], [480, "480 px: the screen's width (recommended)"], [720, "720 px"], [960, "960 px (sharpest)"]].map(([v, l]) => `<option value="${v}" ${a.settings.maxPx === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <div class="help">Raise it if artwork ever looks softer than before. Changing it clears the hub's copies.</div></div>
+    <div class="netgrid">
+      <div class="stat"><div class="k">Pictures sent</div><div class="v">${fmtN(ast.served + ast.inline)}</div><div class="sub2">${fmtN(ast.cacheHits)} from the hub's copy</div></div>
+      <div class="stat"><div class="k">Size</div><div class="v">${fmtBytes(ast.sentBytes)}</div><div class="sub2">instead of ${fmtBytes(ast.originalBytes)}</div></div>
+      <div class="stat"><div class="k">Saved</div><div class="v">${saved == null ? "—" : Math.round(saved * 100) + "<small>%</small>"}</div><div class="sub2">less for the remote to download</div></div>
+      <div class="stat"><div class="k">Hub's copies</div><div class="v">${fmtBytes(a.cacheBytes)}</div><div class="sub2"><a href="#" id="artClear">clear</a> · up to 300 MB</div></div>
+    </div>
+    ${!a.available ? '<p class="bd">The image library didn\'t load, so pictures are passed on at full size.</p>' : ""}
+    ${ast.lastError ? `<p class="sub2">Last problem: ${esc(ast.lastError.message)} (${ago(ast.lastError.at)} ago). The remote then gets the original picture.</p>` : ""}</div>`;
   const keep = $("#winBody").scrollTop;
   $("#winBody").innerHTML = `
     <div class="nethead" style="margin-bottom:4px"><span class="sub2" style="margin:0">Updates every 5 seconds.</span>
       <div class="seg">${[[1, "1 h"], [6, "6 h"], [24, "24 h"]].map(([v, l]) => `<button data-hours="${v}" class="${v === hours ? "on" : ""}" aria-pressed="${v === hours}">${l}</button>`).join("")}</div></div>
     ${remotes}
-    <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Integrations</h4></div>${table}</div>`;
+    <div class="netsec"><div class="nethead" style="margin-bottom:10px"><h4>Integrations</h4></div>${table}</div>
+    ${artHtml}`;
   $("#winBody").scrollTop = keep;
+  const setArt = async (body) => { try { artNow = await call("PATCH", "/artwork", body); renderNetwork(); toast("Artwork setting saved"); } catch (e) { fail(e); } };
+  $("#artOn") && ($("#artOn").onchange = (e) => setArt({ enabled: e.target.checked }));
+  $("#artMax") && ($("#artMax").onchange = (e) => setArt({ maxPx: Number(e.target.value) }));
+  $("#artClear") && ($("#artClear").onclick = async (e) => { e.preventDefault(); try { artNow = await call("POST", "/artwork/clear"); renderNetwork(); toast("Cleared the hub's copies"); } catch (err) { fail(err); } });
   $$("#winBody [data-hours]").forEach((b) => (b.onclick = () => { netState.hours = Number(b.dataset.hours); store.set("pg-net-hours", netState.hours); renderNetwork(); }));
 }
 

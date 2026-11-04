@@ -285,6 +285,33 @@ try {
     console.log(`  awake: link confirmed in ${Date.now() - t0} ms`);
   }
 
+  step("artwork: a picture link from the integration reaches the remote as a hub link, scaled down");
+  {
+    const { createRequire } = await import("node:module");
+    const sharp = createRequire(import.meta.url)("../hub/node_modules/sharp");
+    const poster = await sharp({ create: { width: 1000, height: 1500, channels: 3, background: "#225588" } }).jpeg({ quality: 95 }).toBuffer();
+    const imgSrv = http.createServer((q, r) => r.writeHead(200, { "Content-Type": "image/jpeg" }).end(poster));
+    await new Promise((r) => imgSrv.listen(0, "127.0.0.1", r));
+    await hub.mgr.setOptions("sim_node", { env: { SIM_IMAGE_URL: `http://127.0.0.1:${imgSrv.address().port}/poster.jpg` } });
+    await hub.sup.restart("sim_node");
+    await until(() => hub.sup.info("sim_node").state === "running", 20000, "restart");
+    const sa = await until(async () => { try { return await coreSession(dn.driver_url); } catch { return null; } }, 15000, "session");
+    await sa.req("subscribe_events", { entity_ids: ["sim_switch"] });
+    await sa.req("entity_command", { entity_type: "switch", entity_id: "sim_switch", cmd_id: "toggle" });
+    const ev = await until(() => sa.events.find((e) => e.msg === "entity_change" && e.msg_data.attributes?.media_image_url), 5000, "picture update");
+    const link = ev.msg_data.attributes.media_image_url;
+    assert.ok(link.startsWith(`http://127.0.0.1:${hub.port}/img/`), `not a hub link: ${link}`);
+    const img = Buffer.from(await (await fetch(link)).arrayBuffer());
+    const meta = await sharp(img).metadata();
+    assert.deepEqual([meta.width, meta.height], [480, 720]);
+    console.log(`  the remote got ${link.slice(0, 40)}…: 480×720, ${Math.round(img.length / 1024)} KB instead of ${Math.round(poster.length / 1024)} KB`);
+    sa.close();
+    imgSrv.close();
+    await hub.mgr.setOptions("sim_node", { env: {} });
+    await hub.sup.restart("sim_node");
+    await until(() => hub.sup.info("sim_node").state === "running", 20000, "restart");
+  }
+
   step("asleep: answers go at once, state updates are held and merged, delivered on wake");
   {
     const L = bridge.link;
