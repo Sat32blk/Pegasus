@@ -177,7 +177,9 @@ export class LinkServer {
           link.address = lan;
         }
         link.standby = !!hello.standby;
-        link.remote = String(hello.remote || "remote").slice(0, 80);
+        // the remote's host name is sometimes reported with ".local" (it changed after a restart
+        // of the remote): one name, so its history and battery figures stay together
+        link.remote = String(hello.remote || "remote").replace(/\.local\.?(?=$| \()/i, "").replace(/\.(?=$| \()/, "").slice(0, 80);
         link.bridge = String(hello.bridge || "?").slice(0, 20);
         this.log(`link up: ${link.remote} (bridge ${link.bridge}) from ${link.address}`);
         this.net.linkUp(link.remote);

@@ -153,7 +153,7 @@ async function startLink() {
   if (!config?.hub || !config?.token) return;
   core = config.apiKey ? new CoreClient(config.address || "127.0.0.1", { apiKey: config.apiKey }) : null;
   config.state ||= {};
-  link = new LinkClient({ hub: config.hub, token: config.token, remote: os.hostname(), version: VERSION, log });
+  link = new LinkClient({ hub: config.hub, token: config.token, remote: remoteName(), version: VERSION, log });
   tunnels = new Tunnels({ link, log });
   registrar = new Registrar({
     getCore: () => core,
@@ -247,7 +247,7 @@ function setupPage(values = {}) {
 /** Tries the link with the given address and code. Resolves "up" | "denied" | "unreachable". */
 function probeLink(hub, token) {
   return new Promise((resolve) => {
-    const probe = new LinkClient({ hub, token, remote: `${os.hostname()} (setup)`, version: VERSION });
+    const probe = new LinkClient({ hub, token, remote: `${remoteName()} (setup)`, version: VERSION });
     const done = (r) => {
       clearTimeout(t);
       probe.stop();
@@ -372,3 +372,8 @@ for (const sig of ["SIGTERM", "SIGINT"]) process.once(sig, async () => {
   await stopLink();
   process.exit(0);
 });
+
+/** The remote's name without ".local" (its host name sometimes has it, sometimes not). */
+function remoteName() {
+  return os.hostname().replace(/\.local\.?$/i, "").replace(/\.$/, "") || "remote";
+}
