@@ -7,6 +7,7 @@
 
 import "./env.js"; // PEGASIS_* settings from before the rename
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -77,6 +78,22 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const listStale = (remote) => { const c = lists.get(remote); if (c) c.at = 0; };
   link.onRemoteChange = listStale;
 
+  /** The hub's address on the home network, as the remotes reach it. */
+  function lanAddress() {
+    // best: the address a linked remote actually connected to
+    for (const l of link.links) {
+      const a = String(l.ws?._socket?.localAddress || "").replace(/^::ffff:/, "");
+      if (l.ready && a && !a.startsWith("127.")) return a;
+    }
+    const nets = os.networkInterfaces();
+    const cands = [];
+    for (const [name, list] of Object.entries(nets)) {
+      if (/^(docker|veth|br-|hassio|lo)/.test(name)) continue;
+      for (const n of list || []) if (n.family === "IPv4" && !n.internal && !/^172\.(17|30)\./.test(n.address)) cands.push(n.address);
+    }
+    return cands.find((a) => /^(192\.168|10\.)/.test(a)) || cands[0] || null;
+  }
+
   /** When this remote's first integration finished moving to the hub (kept on the hub). */
   function firstMoveAt(remote) {
     const st = link.status().find((r) => r.remote === remote);
@@ -104,7 +121,9 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       const url = new URL(req.url, "http://x");
       // artwork links are signed: the remote fetches them without the page password
       if (req.method === "GET" && url.pathname.startsWith("/img/")) return await artwork.serve(req, res, url.pathname.slice(5).split("/"));
-      if (password && !authOk(req, password)) {
+      // inside Home Assistant's sidebar (ingress) Home Assistant has signed the user in already
+      const viaIngress = req.headers["x-ingress-path"] && /^(::ffff:)?172\.30\.32\.2$/.test(req.socket.remoteAddress || "");
+      if (password && !viaIngress && !authOk(req, password)) {
         res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasus Hub"' });
         return res.end("Login required");
       }
@@ -127,7 +146,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       return send(res, 200, {
         version: VERSION,
         arch: hostArch(),
-        pairing: { token: store.hub.token, port: server.address().port },
+        pairing: { token: store.hub.token, port: server.address().port, address: lanAddress() },
         remotes: link.status(),
         hubMemMB: Math.round(process.memoryUsage().rss / 1048576),
         integrations: store.list().length
@@ -136,9 +155,20 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     if (m === "GET" && p[0] === "network") {
       const live = Object.fromEntries(link.status().map((r) => [r.remote, r]));
       const names = Object.fromEntries(store.list().map((x) => [x.id, x.name]));
-      return send(res, 200, link.net.snapshot(live, names));
+      const snap = link.net.snapshot(live, names);
+      if (url.searchParams.get("brief") === "1") for (const r of snap.remotes) delete r.history;
+      return send(res, 200, snap);
     }
-    if (m === "GET" && p[0] === "resources") return send(res, 200, resources.snapshot());
+    // ?brief=1: without the per-minute histories (for Home Assistant, which polls)
+    if (m === "GET" && p[0] === "resources") {
+      const r = resources.snapshot();
+      if (url.searchParams.get("brief") === "1") {
+        delete r.host.history;
+        delete r.hub.history;
+        for (const x of [...r.integrations, ...r.remotes]) delete x.history;
+      }
+      return send(res, 200, r);
+    }
     if (p[0] === "artwork") {
       if (m === "GET" && !p[1]) return send(res, 200, artwork.summary());
       if (m === "PATCH" && !p[1]) {

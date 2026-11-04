@@ -367,7 +367,7 @@ async function call(method, path, body, raw) {
   const opt = { method, headers: {} };
   if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
   else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
-  const r = await fetch("/api" + path, opt);
+  const r = await fetch("api" + path, opt); // relative: works at / and behind Home Assistant's sidebar (ingress)
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
@@ -468,7 +468,7 @@ function render() {
   const noAccess = st.remotes.filter((r) => r.access === false);
   $("#banner").innerHTML =
     (!st.remotes.length ? `<div class="banner warn" style="flex-wrap:wrap"><span>📱</span><span style="flex:1;min-width:220px"><b>No remote is linked.</b> In Pegasus Bridge's setup on the remote, paste the hub address and the pairing code.</span>
-      <button class="btn" data-copy="${esc(location.hostname + ":" + st.pairing.port)}" data-what="the hub address">Copy address</button><button class="btn" data-copy="${esc(st.pairing.token)}" data-what="the pairing code">Copy code</button><button class="btn primary" data-a="pair" style="margin-left:0">How to pair</button></div>` : "") +
+      <button class="btn" data-copy="${esc((st.pairing.address || location.hostname) + ":" + st.pairing.port)}" data-what="the hub address">Copy address</button><button class="btn" data-copy="${esc(st.pairing.token)}" data-what="the pairing code">Copy code</button><button class="btn primary" data-a="pair" style="margin-left:0">How to pair</button></div>` : "") +
     noAccess.map((r) => `<div class="banner bad"><span>🔑</span><span><b>${esc(r.remote)}: the Bridge has no access to the remote.</b> Run the Bridge's setup again on the remote and enter the web-configurator PIN.</span></div>`).join("") +
     crashed.map((m) => `<div class="banner warn"><span>⚠</span><span><b>${esc(m.name)} keeps crashing</b> (${m.status.restarts} restarts). Its devices are unavailable on the remotes.</span><button class="btn" data-a="logs" data-id="${esc(m.id)}">See the log</button></div>`).join("");
   renderTiles();
@@ -979,7 +979,7 @@ function showRemotes(tab) {
       <td>${r.standby ? `<span class="status st-idle">asleep</span>` : `<span class="status st-running">${fmtMs(r.rttMs)}</span>`}<div class="sub2">linked ${ago(r.since)} · ${r.sessions} connections</div></td>
       <td class="num"><button class="btn small" data-battery="${esc(r.remote)}">Battery</button> <button class="btn small" data-blog="${esc(r.remote)}">Bridge log</button></td></tr>`).join("")
     : `<tr><td colspan="3" class="sub2">None yet. Use “Pair a remote”.</td></tr>`;
-  const addr = `${location.hostname}:${st.pairing.port}`;
+  const addr = `${st.pairing.address || location.hostname}:${st.pairing.port}`;
   openWin({ kind: "remotes", title: "Remotes", tabs: [["linked", "Linked remotes"], ["pair", "Pair a remote"]], tab,
     body: tab === "linked" ? `<div class="tablewrap" style="border:0"><table class="rtable"><thead><tr><th>Remote</th><th>Link</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
       : `<div class="pair">

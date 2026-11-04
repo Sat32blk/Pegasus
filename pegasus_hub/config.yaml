@@ -1,0 +1,28 @@
+name: Pegasus Hub
+version: "0.8.0"
+slug: pegasus_hub
+description: Run Unfolded Circle remote integrations in Home Assistant instead of on the remote, and move installed ones here to get past the 10-integration limit.
+url: https://github.com/Sat32blk/Pegasus
+arch:
+  - aarch64
+  - amd64
+# the published hub image, tagged with this version (multi-architecture)
+image: ghcr.io/sat32blk/pegasus-hub
+init: false # the image has its own init (tini)
+startup: application
+boot: auto
+# integrations find devices with mDNS / SSDP, and remotes link to port 9600 on this machine
+host_network: true
+ingress: true
+ingress_port: 9600
+panel_icon: mdi:remote-tv
+panel_title: Pegasus
+watchdog: tcp://[HOST]:9600
+backup_exclude:
+  - "cache/**"
+  - ".cache/**"
+options:
+  name: Pegasus Hub
+schema:
+  name: str
+  password: password?

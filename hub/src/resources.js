@@ -55,11 +55,13 @@ export class Resources {
     this.host = new Series();
     this.remote = new Map(); // remote name -> { series, last, at, error }
     this.lastCpu = { usage: process.cpuUsage(), at: Date.now() };
-    this.timer = setInterval(() => this.sample(), SAMPLE_MS);
+    // every 10 s: the hub's own figures, and any linked remote not read for a minute (so a newly
+    // linked remote is read within seconds, then once a minute)
+    this.timer = setInterval(() => {
+      this.sample();
+      this.sampleRemotes({ due: true }).catch(() => {});
+    }, SAMPLE_MS);
     this.timer.unref?.();
-    this.remoteTimer = setInterval(() => this.sampleRemotes(), REMOTE_MS);
-    this.remoteTimer.unref?.();
-    setTimeout(() => this.sampleRemotes(), 5000).unref?.();
   }
 
   sample(now = Date.now()) {
@@ -84,11 +86,13 @@ export class Resources {
     this.host.add({ load: h.load1, memUsed: h.memUsedMB }, now);
   }
 
-  async sampleRemotes() {
+  async sampleRemotes({ due = false } = {}) {
     for (const r of this.remotes()) {
       let e = this.remote.get(r.remote);
-      if (!e) this.remote.set(r.remote, (e = { series: new Series(), last: null, at: null, error: null }));
+      if (!e) this.remote.set(r.remote, (e = { series: new Series(), last: null, at: null, error: null, tried: 0 }));
       if (r.standby || !r.address) continue; // don't wake the remote for this
+      if (due && Date.now() - (e.tried || 0) < REMOTE_MS - 1000) continue;
+      e.tried = Date.now();
       try {
         const st = await this.fetchStatus(r.address);
         const mem = st?.memory || {};
@@ -133,7 +137,6 @@ export class Resources {
 
   close() {
     clearInterval(this.timer);
-    clearInterval(this.remoteTimer);
   }
 }
 

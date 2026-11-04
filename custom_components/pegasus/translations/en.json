@@ -1,0 +1,71 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pegasus Hub",
+        "description": "Where the Pegasus Hub runs. For the Home Assistant add-on keep 127.0.0.1 and port 9600; for a hub on another server, enter its address.",
+        "data": { "host": "Host", "port": "Port", "password": "Page password" },
+        "data_description": {
+          "host": "Address of the machine running the hub.",
+          "port": "The hub's port (PEGASUS_PORT), normally 9600.",
+          "password": "Only if the hub has a page password (PEGASUS_PASSWORD)."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pegasus Hub password",
+        "description": "The hub asks for its page password.",
+        "data": { "password": "Page password" }
+      },
+      "reconfigure": {
+        "title": "Pegasus Hub",
+        "data": { "host": "Host", "port": "Port", "password": "Page password" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Can't reach a Pegasus Hub there. Check the address and port, and that the hub is running.",
+      "invalid_auth": "Wrong page password."
+    },
+    "abort": {
+      "already_configured": "This hub is already set up.",
+      "reauth_successful": "Password updated.",
+      "reconfigure_successful": "Settings updated."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "running": { "name": "Integrations running", "unit_of_measurement": "integrations" },
+      "cpu": { "name": "CPU" },
+      "memory": { "name": "Memory" },
+      "artwork_saved": { "name": "Artwork saved" },
+      "version": { "name": "Version" },
+      "round_trip": { "name": "Round trip" },
+      "traffic": { "name": "Link traffic" },
+      "messages": { "name": "Link messages" },
+      "reconnects": { "name": "Reconnects" },
+      "battery": { "name": "Battery" },
+      "battery_saved": { "name": "Battery saved" },
+      "days_per_charge": { "name": "Days per charge" },
+      "drain_awake": { "name": "Drain while awake" },
+      "drain_asleep": { "name": "Drain while asleep" },
+      "load": { "name": "Load" },
+      "memory_used": { "name": "Memory used" },
+      "state": {
+        "name": "State",
+        "state": { "running": "Running", "starting": "Starting", "stopped": "Stopped", "crashed": "Crashed", "error": "Error" }
+      },
+      "answers_in": { "name": "Answers in" },
+      "not_sent": { "name": "Updates not sent", "unit_of_measurement": "updates" }
+    },
+    "binary_sensor": {
+      "linked": { "name": "Linked" },
+      "asleep": { "name": "Asleep" },
+      "problem": { "name": "Problem" }
+    },
+    "switch": {
+      "running": { "name": "Running" }
+    },
+    "button": {
+      "check_updates": { "name": "Check for updates" }
+    }
+  }
+}
