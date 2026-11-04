@@ -108,6 +108,7 @@ export class Manager extends EventEmitter {
         commandOverride: old?.commandOverride || null,
         cwd: prep.cwd,
         pythonPath: prep.pythonPath || [],
+        dockerConfigPath: !!prep.dockerConfigPath,
         port: old?.port || this.store.freePort(),
         env: old?.env || {},
         autostart: old ? old.autostart : true,

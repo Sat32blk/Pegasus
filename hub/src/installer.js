@@ -87,7 +87,19 @@ export class Installer {
    * then, like the archive built for the remote at release time. Newer library versions sometimes
    * break an integration that doesn't pin them; if nothing installs that way, the newest are used.
    */
-  async prepare(dir, log, { venvPath, depsBefore, source } = {}) {
+  async prepare(dir, log, opts = {}) {
+    const r = await this.#prepare(dir, log, opts);
+    // integrations that decide "am I in Docker?" from UC_CONFIG_HOME starting with /config (and
+    // otherwise assume they run on the remote: Integration Manager then only serves its page while
+    // the remote charges) are told they run in a container
+    if (dockerByConfigPath(dir)) {
+      r.dockerConfigPath = true;
+      log("it checks for Docker by its settings folder; it gets one under /config");
+    }
+    return r;
+  }
+
+  async #prepare(dir, log, { venvPath, depsBefore, source } = {}) {
     const files = walk(dir, 4);
     const driverJsonPath = pickDriverJson(dir, files);
     if (!driverJsonPath) throw new InstallError("No driver.json found: this does not look like an Unfolded Circle integration");
@@ -375,6 +387,19 @@ function nameOf(driver) {
   return typeof n === "string" ? n : n?.en || Object.values(n || {})[0] || driver.driver_id;
 }
 export { nameOf };
+
+/** Source that treats UC_CONFIG_HOME under /config as "running in Docker". */
+export function dockerByConfigPath(dir) {
+  for (const f of walk(dir, 4).filter((x) => /\.(py|js|mjs|ts)$/.test(x) && !/[\\/](node_modules|\.venv|tests?)[\\/]/.test(x)).slice(0, 600)) {
+    try {
+      const t = fs.readFileSync(f, "utf8");
+      if (/UC_CONFIG_HOME/.test(t) && /startsWith\(\s*["']\/config["']|startswith\(\s*["']\/config["']/.test(t)) return true;
+    } catch {
+      /* unreadable */
+    }
+  }
+  return false;
+}
 
 /** A day after an ISO date (so packages published on release day count), or null. */
 function dayAfter(iso) {

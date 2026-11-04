@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { portOpen, sleep } from "./util.js";
 import { redact } from "./redact.js";
+import { dockerByConfigPath } from "./installer.js";
 
 const LOG_LINES = 800;
 const LOG_FILE_MAX = 2 * 1024 * 1024;
@@ -128,6 +129,9 @@ export class Supervisor extends EventEmitter {
     if (p.child) return;
     clearTimeout(p.timer);
     await this.#ensurePort(id);
+    // installed before the hub looked for this: look once
+    const m0 = this.store.get(id);
+    if (m0 && m0.dockerConfigPath === undefined) this.store.put({ ...m0, dockerConfigPath: dockerByConfigPath(this.store.appDir(id)) });
     if (p.child || !p.wantRunning) return;
     this.#spawn(id, this.store.get(id));
   }
@@ -160,7 +164,7 @@ export class Supervisor extends EventEmitter {
     const env = {
       ...process.env,
       ...(meta.env || {}),
-      UC_CONFIG_HOME: this.store.configDir(id),
+      UC_CONFIG_HOME: meta.dockerConfigPath ? configLink(id, this.store.configDir(id)) : this.store.configDir(id),
       // integrations installed by hub 0.3+ get their own data folder, like on the remote
       UC_DATA_HOME: meta.ownDataDir ? this.store.dataDirOf(id) : this.store.configDir(id),
       STATE_DIRECTORY: meta.ownDataDir ? this.store.dataDirOf(id) : this.store.configDir(id),
@@ -318,5 +322,22 @@ function killGroup(child, sig) {
     } catch {
       /* gone */
     }
+  }
+}
+
+/**
+ * /config/<id>, a link to the integration's settings folder, for integrations that only see they
+ * run in a container when their settings folder is under /config. Falls back to the folder itself
+ * when /config can't be used (the container didn't start as root).
+ */
+function configLink(id, real) {
+  const link = path.join("/config", id);
+  try {
+    if (fs.existsSync(link) && fs.realpathSync(link) === fs.realpathSync(real)) return link;
+    fs.rmSync(link, { force: true });
+    fs.symlinkSync(real, link);
+    return link;
+  } catch {
+    return real;
   }
 }

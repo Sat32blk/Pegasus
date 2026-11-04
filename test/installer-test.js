@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Installer, InstallError } from "../hub/src/installer.js";
+import { Installer, InstallError, dockerByConfigPath } from "../hub/src/installer.js";
 import { pyinstallerEntry } from "../hub/src/buildentry.js";
 import { publicAddress } from "../hub/src/linkserver.js";
 import { compareVersions } from "../hub/src/util.js";
@@ -118,6 +118,15 @@ try {
     process.env = keep;
     console.log("  ok");
   }
+  step("integrations that look for Docker by a settings folder under /config are recognised (Integration Manager)");
+  {
+    const im = repo({ "driver.json": DJ("im"), "m/device.py": 'config_home = os.getenv("UC_CONFIG_HOME", "")\nexternal = not config_home or config_home.startswith("/config")\n' });
+    const other = repo({ "driver.json": DJ("o"), "d.py": 'p = os.getenv("UC_CONFIG_HOME", "/config")\n' });
+    assert.equal(dockerByConfigPath(im), true);
+    assert.equal(dockerByConfigPath(other), false);
+    console.log("  ok");
+  }
+
   step("release tags written v.0.8.1 sort like v0.8.1 (Onkyo)");
   {
     const tags = ["v.0.7.1", "v.0.8.1", "v0.8.0"].sort(compareVersions);
