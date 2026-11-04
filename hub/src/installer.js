@@ -246,6 +246,7 @@ export class Installer {
       if (!done) log("that didn't work (an old package may not build on this Python); using the newest dependencies");
     }
     if (!done) await run(pip, pipArgs, { cwd: projDir, log });
+    await this.#buildFrontends(root, files, log);
 
     // Find the entry point, most reliable first:
     //  1. the integration's own Dockerfile command (how its author runs it)
@@ -357,6 +358,36 @@ export class Installer {
     return { runtime: "python", command: command.map((c) => (c === py ? "$VENV/bin/python" : c)), cwd: rel(root, cwd), pythonPath };
   }
 
+  /**
+   * A web page that's a separate JavaScript app (e.g. Integration Manager's React UI in ui/, built
+   * into its Python package by "npm run build"): release archives ship it built, the source
+   * doesn't, so build it here. A failure only costs the page, so it doesn't stop the install.
+   */
+  async #buildFrontends(root, files, log) {
+    const workflows = readWorkflows(root);
+    const dirs = files
+      .filter((f) => path.basename(f) === "package.json" && path.dirname(f) !== root && !/node_modules/.test(f))
+      .map((f) => path.dirname(f))
+      .filter((d) => {
+        const pkg = readJson(path.join(d, "package.json"), {});
+        if (!pkg.scripts?.build) return false;
+        const relDir = rel(root, d);
+        return /^(ui|web|webui|frontend|client|www|dashboard)$/i.test(path.basename(d)) || new RegExp(`(--prefix\\s+|cd\\s+)\\.?/?${relDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b[^\\n]*\\n?[^\\n]*run build`).test(workflows);
+      })
+      .slice(0, 3);
+    for (const d of dirs) {
+      try {
+        log(`building its web page (${rel(root, d)}: npm run build)`);
+        const hasLock = fs.existsSync(path.join(d, "package-lock.json"));
+        await run("npm", [hasLock ? "ci" : "install", "--no-audit", "--no-fund"], { cwd: d, log });
+        await run("npm", ["run", "build"], { cwd: d, log });
+        fs.rmSync(path.join(d, "node_modules"), { recursive: true, force: true }); // only the output is needed
+      } catch (e) {
+        log(`its web page didn't build (${e.message}); the integration works, its page may not`);
+      }
+    }
+  }
+
   /** Newest tag for a git source, for update checks. */
   latest(source, log) {
     return source?.type === "git" ? latestTag(source.url, log) : Promise.resolve(null);
@@ -387,6 +418,16 @@ function nameOf(driver) {
   return typeof n === "string" ? n : n?.en || Object.values(n || {})[0] || driver.driver_id;
 }
 export { nameOf };
+
+/** The text of a repository's GitHub workflows (to see how its release is built). */
+function readWorkflows(root) {
+  const wf = path.join(root, ".github", "workflows");
+  try {
+    return fs.readdirSync(wf).filter((f) => /\.ya?ml$/i.test(f)).map((f) => fs.readFileSync(path.join(wf, f), "utf8")).join("\n");
+  } catch {
+    return "";
+  }
+}
 
 /** Source that treats UC_CONFIG_HOME under /config as "running in Docker". */
 export function dockerByConfigPath(dir) {

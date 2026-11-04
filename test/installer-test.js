@@ -127,6 +127,20 @@ try {
     console.log("  ok");
   }
 
+  step("a separate web UI is built into the integration (Integration Manager's React page)");
+  {
+    const dir = repo({
+      "driver.json": DJ("im2"),
+      "requirements.txt": "",
+      "intg-m/driver.py": "if __name__ == '__main__':\n    pass\n",
+      "ui/package.json": JSON.stringify({ name: "ui", version: "1.0.0", scripts: { build: "node build.js" } }),
+      "ui/build.js": "const fs=require('fs');fs.mkdirSync('../intg-m/static/app',{recursive:true});fs.writeFileSync('../intg-m/static/app/index.html','<html></html>');"
+    });
+    await inst.prepare(dir, log);
+    assert.ok(fs.existsSync(path.join(dir, "intg-m/static/app/index.html")), "the UI wasn't built");
+    console.log("  ui/ built into intg-m/static/app");
+  }
+
   step("release tags written v.0.8.1 sort like v0.8.1 (Onkyo)");
   {
     const tags = ["v.0.7.1", "v.0.8.1", "v0.8.0"].sort(compareVersions);
