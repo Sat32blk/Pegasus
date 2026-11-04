@@ -10,12 +10,22 @@ Nothing goes to GitHub until the owner says push.
 
 **One-time step:** the first published image is private. Open github.com/Sat32blk → **Packages** → **pegasus-hub** → **Package settings** → **Change visibility** → **Public**.
 
-## Making a release
+## Releasing the Bridge
 
-1. Bump the version in `hub/package.json`, `bridge/src/driver.json` (and its `release_date`), `bridge/package.json`, `bridge/src/bin/package.json` and `package.json`. The Bridge version must be 20 characters or fewer.
+The Bridge has its own releases, tagged `bridge-v<version>`, so its numbers never mix with the hub's.
+
+1. Bump the version in `bridge/src/driver.json` (and its `release_date`), `bridge/package.json` and `bridge/src/bin/package.json`. At most 20 characters.
 2. `npm test`, commit and push.
-3. `git tag v0.2.0 && git push origin v0.2.0`.
-4. On GitHub, **Releases → Draft a new release**: choose the tag, list what changed, attach `uc-intg-pegasus-bridge-<version>.tar.gz`.
+3. On GitHub: **Releases → Draft a new release → Choose a tag**, type `bridge-v<version>` (e.g. `bridge-v0.4.1`) and **Create new tag on publish**. Title it `Pegasus Bridge <version>`, list what changed, and **Publish release**.
+4. `.github/workflows/bridge-release.yml` checks the tag matches `driver.json`, runs the tests, builds `uc-intg-pegasus-bridge-<version>.tar.gz` and attaches it to the release (a minute or two). That file is what people upload to the remote.
+
+## Releasing the hub
+
+Every push to `main` already publishes `:latest` and `:<hub version>`. For a named release:
+
+1. Bump the version in `hub/package.json` and `package.json`.
+2. `npm test`, commit and push.
+3. `git tag v<version> && git push origin v<version>` (also publishes `:<major>.<minor>`), and optionally a GitHub release for it with the changes.
 
 ## Building the hub without GitHub (e.g. straight on the server)
 

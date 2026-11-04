@@ -1,13 +1,13 @@
 {
   "driver_id": "pegasus_bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "icon": "uc:integration",
   "min_core_api": "0.20.0",
   "name": { "en": "Pegasus Bridge" },
   "description": {
     "en": "Links this remote to a Pegasus Hub (a Docker container that runs integrations) over one fast connection. Every integration on the hub appears here under Integrations, as if it were installed on the remote."
   },
-  "developer": { "name": "Sat32blk", "url": "https://github.com/Sat32blk/pegasis" },
+  "developer": { "name": "Sat32blk", "url": "https://github.com/Sat32blk/Pegasus" },
   "setup_data_schema": {
     "title": { "en": "Connect to a Pegasus Hub" },
     "settings": [
@@ -17,6 +17,6 @@
       { "id": "remove", "label": { "en": "Remove integrations from this remote when they are removed on the hub" }, "field": { "checkbox": { "value": true } } }
     ]
   },
-  "release_date": "2026-11-03",
-  "home_page": "https://github.com/Sat32blk/pegasis"
+  "release_date": "2026-11-04",
+  "home_page": "https://github.com/Sat32blk/Pegasus"
 }

@@ -3,7 +3,8 @@
 # <DOCKERHUB_USERNAME>/pegasus-hub once the repository variable DOCKERHUB_USERNAME and
 # the secret DOCKERHUB_TOKEN are set (Settings > Secrets and variables > Actions).
 #   - every push to the main branch updates the :latest tag
-#   - pushing a tag like v0.2.0 also publishes :0.2.0 and :0.2, and builds the Bridge archive
+#   - pushing a tag like v0.9.0 also publishes :0.9.0 and :0.9 (hub versions; the Bridge has its
+#     own releases, tagged bridge-v…, see bridge-release.yml)
 name: Docker image
 
 on:
@@ -91,19 +92,3 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ vars.DOCKERHUB_USERNAME }}/pegasus-hub
           short-description: Runs Unfolded Circle remote integrations off the remote, linked by Pegasus Bridge.
-
-  bridge:
-    if: github.ref_type == 'tag'
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: sh bridge/build.sh
-      # The archive to attach to the GitHub release (the release itself is created by hand).
-      - uses: actions/upload-artifact@v4
-        with:
-          name: uc-intg-pegasus-bridge-${{ github.ref_name }}
-          path: bridge/dist/*.tar.gz

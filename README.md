@@ -12,7 +12,7 @@ Why:
 | **Pegasus Hub** (`hub/`) | Docker on your server (amd64 or arm64) | Installs integrations from GitHub or an archive, runs each one, restarts crashes, keeps their settings across updates. Management page on port 9600. |
 | **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. Moves integrations between the remote and the hub. |
 
-Current versions: **Hub 0.8.1**, **Bridge 0.4.0**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
+Current versions: **Hub 0.8.1**, **Bridge 0.4.1**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
 
 ## Contents
 
@@ -73,7 +73,7 @@ Start it with `docker compose up -d` and open `http://<server>:9600`. Update lat
 
 ### 2. Install the Bridge on the remote
 
-1. Get `uc-intg-pegasus-bridge-<version>.tar.gz` from the releases (or build it: `cd bridge && sh build.sh`).
+1. Download `uc-intg-pegasus-bridge-<version>.tar.gz` from the newest **Pegasus Bridge** release on the [Releases page](https://github.com/Sat32blk/Pegasus/releases) (or build it: `cd bridge && sh build.sh`).
 2. Web configurator → **Integrations → Add new → Install custom** → upload it.
 3. Start its setup. On the hub page open **Remotes → Pair a remote** and use the **Copy** buttons for the **hub address** and the **pairing code**; paste them in, and enter the web-configurator **PIN** (used once to create an API key; not stored).
 
