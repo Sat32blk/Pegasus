@@ -31,9 +31,9 @@ Current versions: **Hub 0.7.2**, **Bridge 0.4.0**. Tested on a Remote 3 (firmwar
 
 ```yaml
 services:
-  pegasis-hub:
-    image: ghcr.io/sat32blk/pegasis-hub:latest
-    container_name: pegasis-hub
+  pegasus-hub:
+    image: ghcr.io/sat32blk/pegasus-hub:latest
+    container_name: pegasus-hub
     network_mode: host        # integrations find devices with mDNS / SSDP
     restart: unless-stopped
     environment:

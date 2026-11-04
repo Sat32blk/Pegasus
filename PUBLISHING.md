@@ -4,7 +4,7 @@ Nothing goes to GitHub until the owner says push.
 
 ## Docker image (the hub)
 
-`.github/workflows/docker-image.yml` runs the tests, then builds the hub image for amd64 and arm64 and publishes it to `ghcr.io/sat32blk/pegasis-hub` (and to Docker Hub once `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set, as for Stowaway).
+`.github/workflows/docker-image.yml` runs the tests, then builds the hub image for amd64 and arm64 and publishes it to `ghcr.io/sat32blk/pegasus-hub` (and to Docker Hub once `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` are set, as for Stowaway).
 - Every push to `main` updates `:latest`.
 - A tag like `v0.2.0` also publishes `:0.2.0` and `:0.2`, sets the version shown on the hub page, and builds the Bridge archive (download it from the workflow run and attach it to the release).
 

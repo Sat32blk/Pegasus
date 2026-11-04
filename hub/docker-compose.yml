@@ -2,10 +2,10 @@
 # On OpenMediaVault: Services → Compose → Files → Add, paste this, and change the data folder
 # (the left side of "volumes") to a folder on one of your shares.
 services:
-  pegasis-hub:
-    image: ghcr.io/sat32blk/pegasis-hub:latest
+  pegasus-hub:
+    image: ghcr.io/sat32blk/pegasus-hub:latest
     # build: .                       # or build it on the server: run "docker compose up -d --build" in this folder
-    container_name: pegasis-hub
+    container_name: pegasus-hub
     restart: unless-stopped
     # Host networking: many integrations find their devices with mDNS / SSDP broadcasts, which
     # don't cross Docker's own networks. The page and the link are on PEGASIS_PORT; each
