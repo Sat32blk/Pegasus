@@ -149,7 +149,7 @@ Good to know:
 ```
 
 1. For each integration on the hub, the Bridge opens a loopback endpoint on the remote and registers it with the remote's core as an **external driver** (`POST /api/intg/drivers`).
-   - It uses the integration's **real driver ID** (e.g. `plex_driver`), so entity IDs (`plex_driver.main.…`), Home Assistant and the Integration Manager see exactly what they would for a copy installed on the remote.
+   - It uses the integration's **real driver ID** (e.g. `plex_driver`), so entity IDs (`plex_driver.main.…`) and tools such as the Integration Manager see exactly what they would for a copy installed on the remote.
    - If that ID is taken on the remote, it uses `pgs_<id>` instead, and says so.
 2. The core talks to that endpoint as it would to any integration, including its setup screens.
 3. The Bridge splices each connection onto one channel of the link; the hub splices the channel onto the integration running in the container.
@@ -165,6 +165,7 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file), includ
 ## Install details
 
 - **The data folder** holds the integrations, their settings and logs, the pairing code, battery history and the artwork cache (up to 300 MB). Back it up; nothing else is needed.
+- **Pinning a version:** every build is also tagged with the hub's version, e.g. `image: ghcr.io/sat32blk/pegasus-hub:0.8.1` instead of `:latest`.
 - **Building on the server** instead of pulling: replace `image:` with `build: <path to the hub folder>` and run `docker compose up -d --build`.
 
 How the hub runs each kind of integration:
@@ -196,6 +197,6 @@ Run the hub without Docker: `cd hub && PEGASUS_DATA=./data node src/server.js`. 
 
 - Built-in integrations stay on the remote (they don't use slots and the firmware owns them).
 - Moving back needs a GitHub release with a `.tar.gz` for the remote.
-- Ideas: keep integrations connected through short link drops, compress large messages, time a full button press end to end, pick integrations from the Unfolded Circle list, find the hub automatically in the Bridge setup, Home Assistant support.
+- Ideas: keep integrations connected through short link drops, compress large messages, time a full button press end to end, pick integrations from the Unfolded Circle list, find the hub automatically in the Bridge setup.
 
 MIT licence.
