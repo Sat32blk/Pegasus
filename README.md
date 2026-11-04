@@ -1,4 +1,4 @@
-# Project Pegasis
+# Project Pegasus
 
 Run Unfolded Circle integrations in a Docker container, and have them show up on the Remote 3 / Remote Two as if they were installed on the remote itself.
 
@@ -6,8 +6,8 @@ Two parts:
 
 | Part | Runs on | What it does |
 |---|---|---|
-| **Pegasis Hub** (`hub/`) | Docker (your server) | Installs integrations from GitHub or from a custom-integration archive, runs each one in the container, restarts them if they crash, keeps their settings across updates. Has a management page on port 9600. |
-| **Pegasis Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasis_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. |
+| **Pegasus Hub** (`hub/`) | Docker (your server) | Installs integrations from GitHub or from a custom-integration archive, runs each one in the container, restarts them if they crash, keeps their settings across updates. Has a management page on port 9600. |
+| **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasis_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. |
 
 ## How it works
 
@@ -15,7 +15,7 @@ Two parts:
  Remote                                                          Docker host
  ┌───────────────────────────────────────────────┐              ┌─────────────────────────────────────┐
  │ core ──ws──▶ 127.0.0.1:9700 ┐                 │              │            ┌─▶ 127.0.0.1:10100 Android TV
- │ core ──ws──▶ 127.0.0.1:9701 ┼─ Pegasis Bridge ═══ one link ═══ Pegasis Hub ┼─▶ 127.0.0.1:10101 Apple TV
+ │ core ──ws──▶ 127.0.0.1:9701 ┼─ Pegasus Bridge ═══ one link ═══ Pegasus Hub ┼─▶ 127.0.0.1:10101 Apple TV
  │ core ──ws──▶ 127.0.0.1:9702 ┘                 │   ws :9600   │            └─▶ 127.0.0.1:10102 …
  └───────────────────────────────────────────────┘   /link      └─────────────────────────────────────┘
 ```
@@ -42,7 +42,7 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file).
 
 - An integration is **deleted from the remote only when you remove it on the hub.** One that is stopped, crashed or offline stays registered, because deleting a driver also deletes its entities and their places on your activity pages. You can turn this off in the Bridge setup.
 - If the hub is down, the remote's connections get "try again later" (1013) and reconnect by themselves when the link is back.
-- The Bridge uses the web-configurator PIN once, to create an API key (named "Pegasis Bridge <date>"). The PIN is not stored.
+- The Bridge uses the web-configurator PIN once, to create an API key (named "Pegasus Bridge <date>"). The PIN is not stored.
 - Hosted drivers listen only on 127.0.0.1 inside the container. The link needs the pairing code, compared in constant time.
 
 ## Moving integrations between the remote and the hub
@@ -118,7 +118,7 @@ Each integration's own settings live in `data/integrations/<id>/config` and surv
 3. Start its setup and enter the **hub address**, the **pairing code** (both shown on the hub's page) and the **web-configurator PIN**.
 4. Every hub integration now appears under **Integrations**. Open one and run its setup, exactly as if it were installed on the remote.
 
-The Bridge also adds three entities: **Pegasis Hub link** (status text), **Pegasis Hub latency** (ms) and **Pegasis: re-sync integrations** (a button).
+The Bridge also adds three entities: **Pegasus Hub link** (status text), **Pegasus Hub latency** (ms) and **Pegasus: re-sync integrations** (a button).
 
 ## Develop and test
 

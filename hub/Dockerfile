@@ -1,4 +1,4 @@
-# Pegasis Hub: runs Unfolded Circle integrations (Node.js and Python) for the Pegasis Bridge.
+# Pegasus Hub: runs Unfolded Circle integrations (Node.js and Python) for the Pegasus Bridge.
 # Built for amd64 and arm64. On arm64 (e.g. a Raspberry Pi) integrations built for the remote's
 # processor run as they are; on amd64 Python integrations are installed from source.
 FROM node:22-trixie-slim

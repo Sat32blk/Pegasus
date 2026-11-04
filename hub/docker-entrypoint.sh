@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pegasis Hub start-up.
+# Pegasus Hub start-up.
 #
 # Integrations are third-party code, so the hub (and every integration it starts) runs as an
 # ordinary user, not root: PUID / PGID (default 1000 / 100, the usual first user and "users" group

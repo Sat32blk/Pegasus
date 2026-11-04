@@ -1,6 +1,6 @@
-// Pegasis Bridge: a custom integration that runs on the Unfolded Circle Remote 3 / Remote Two.
+// Pegasus Bridge: a custom integration that runs on the Unfolded Circle Remote 3 / Remote Two.
 //
-// It keeps one fast, multiplexed link to a Pegasis Hub (a Docker container that hosts integration
+// It keeps one fast, multiplexed link to a Pegasus Hub (a Docker container that hosts integration
 // drivers) and makes every driver on the hub show up on the remote as its own integration:
 //   - each hosted driver gets a loopback endpoint ws://127.0.0.1:<port> on the remote
 //   - the bridge registers it with the remote's core as an external driver at that endpoint
@@ -28,7 +28,7 @@ const VERSION = JSON.parse(fs.readFileSync(DRIVER_JSON, "utf8")).version;
 // log needs the web-configurator login.
 const recentLog = [];
 const log = (...a) => {
-  console.log("[pegasis]", ...a);
+  console.log("[pegasus]", ...a);
   recentLog.push(`${new Date().toISOString().slice(5, 19).replace("T", " ")} ${a.join(" ")}`);
   if (recentLog.length > 150) recentLog.splice(0, recentLog.length - 150);
   scheduleReport();
@@ -86,18 +86,18 @@ function saveConfig() {
 // Entities: link status + latency (handy on a page while setting things up)
 // ---------------------------------------------------------------------------
 
-const statusSensor = new uc.Sensor("pegasis_link", { en: "Pegasis Hub link" }, {
-  area: "Pegasis",
+const statusSensor = new uc.Sensor("pegasis_link", { en: "Pegasus Hub link" }, {
+  area: "Pegasus",
   attributes: { state: uc.SensorStates.On, value: "not set up" }
 });
-const latencySensor = new uc.Sensor("pegasis_latency", { en: "Pegasis Hub latency" }, {
-  area: "Pegasis",
+const latencySensor = new uc.Sensor("pegasis_latency", { en: "Pegasus Hub latency" }, {
+  area: "Pegasus",
   deviceClass: uc.SensorDeviceClasses.Custom,
   options: { custom_unit: "ms", decimals: 1 },
   attributes: { state: uc.SensorStates.Unavailable, value: 0, unit: "ms" }
 });
-const resyncButton = new uc.Button("pegasis_resync", { en: "Pegasis: re-sync integrations" }, {
-  area: "Pegasis",
+const resyncButton = new uc.Button("pegasis_resync", { en: "Pegasus: re-sync integrations" }, {
+  area: "Pegasus",
   cmdHandler: async () => {
     registrar?.resync();
     return uc.StatusCodes.Ok;
@@ -284,7 +284,7 @@ async function applySetup(v) {
     const setupClient = new CoreClient(address, { pin });
     try {
       const stamp = new Date().toISOString().slice(0, 19).replace("T", " ");
-      apiKey = await setupClient.createApiKey(`Pegasis Bridge ${stamp}`);
+      apiKey = await setupClient.createApiKey(`Pegasus Bridge ${stamp}`);
     } catch (e) {
       log("setup: creating the API key failed:", e.message);
       return new uc.SetupError(e.kind === "unauthorized" ? uc.IntegrationSetupError.AuthorizationError : uc.IntegrationSetupError.Other);
@@ -319,7 +319,7 @@ async function applySetup(v) {
 async function setupHandler(msg) {
   if (msg instanceof uc.DriverSetupRequest) {
     if (msg.reconfigure || !msg.setupData?.hub) {
-      return new uc.RequestUserInput({ en: "Connect to a Pegasis Hub" }, setupPage(config || {}));
+      return new uc.RequestUserInput({ en: "Connect to a Pegasus Hub" }, setupPage(config || {}));
     }
     return applySetup(msg.setupData);
   }

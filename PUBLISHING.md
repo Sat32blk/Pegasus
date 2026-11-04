@@ -1,4 +1,4 @@
-# Releasing Pegasis
+# Releasing Pegasus
 
 Nothing goes to GitHub until the owner says push.
 

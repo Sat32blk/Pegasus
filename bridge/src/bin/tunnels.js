@@ -64,7 +64,7 @@ export class Tunnels {
     });
     if (!ch) {
       // hub offline: the core retries on its own, and the link reconnects meanwhile
-      ws.close(1013, "Pegasis hub offline");
+      ws.close(1013, "Pegasus hub offline");
       return;
     }
     ws.on("message", (data, isBinary) => {

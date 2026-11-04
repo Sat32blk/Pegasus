@@ -1,5 +1,5 @@
-// Pegasis Hub: hosts Unfolded Circle integration drivers in a container and serves them to the
-// Pegasis Bridge on the remote over one fast multiplexed link.
+// Pegasus Hub: hosts Unfolded Circle integration drivers in a container and serves them to the
+// Pegasus Bridge on the remote over one fast multiplexed link.
 //
 //   http://<host>:9600/          management page
 //   http://<host>:9600/api/...   REST API used by the page
@@ -104,7 +104,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       // artwork links are signed: the remote fetches them without the page password
       if (req.method === "GET" && url.pathname.startsWith("/img/")) return await artwork.serve(req, res, url.pathname.slice(5).split("/"));
       if (password && !authOk(req, password)) {
-        res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasis Hub"' });
+        res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasus Hub"' });
         return res.end("Login required");
       }
       if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
@@ -257,7 +257,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   });
 
   await new Promise((r) => server.listen(port, "0.0.0.0", r));
-  say(`Pegasis Hub ${VERSION} on port ${server.address().port} (${hostArch()}), data in ${dataDir}`);
+  say(`Pegasus Hub ${VERSION} on port ${server.address().port} (${hostArch()}), data in ${dataDir}`);
   say(`pairing code: ${store.hub.token}`);
 
   for (const meta of store.list()) if (meta.autostart) sup.start(meta.id).catch((e) => say(`start ${meta.id}: ${e.message}`));

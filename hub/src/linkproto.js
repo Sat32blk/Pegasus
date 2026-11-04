@@ -1,4 +1,4 @@
-// Pegasis link protocol: one persistent WebSocket between the Bridge (on the remote) and the Hub
+// Pegasus link protocol: one persistent WebSocket between the Bridge (on the remote) and the Hub
 // (Docker container), carrying any number of integration-driver sessions side by side.
 //
 // Every WebSocket message on the link is ONE binary frame:

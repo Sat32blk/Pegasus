@@ -1,4 +1,4 @@
-// Hub side of the Pegasis link. Each connected Bridge (one per remote) gets the catalog of hosted
+// Hub side of the Pegasus link. Each connected Bridge (one per remote) gets the catalog of hosted
 // drivers and opens channels; every channel is spliced onto a WebSocket to that driver on
 // 127.0.0.1:<port>. Frames are forwarded without parsing.
 
@@ -175,7 +175,7 @@ export class LinkServer {
           link,
           json(T.WELCOME, {
             proto: PROTO_VERSION,
-            hub: process.env.PEGASIS_NAME || "Pegasis Hub",
+            hub: process.env.PEGASIS_NAME || "Pegasus Hub",
             version: this.version,
             drivers: this.catalog(),
             ...this.#removed()

@@ -1,4 +1,4 @@
-// Bridge side of the Pegasis link: one persistent WebSocket to the hub carrying every driver
+// Bridge side of the Pegasus link: one persistent WebSocket to the hub carrying every driver
 // session as a numbered channel. Reconnects by itself, measures round-trip time.
 
 import { EventEmitter } from "node:events";

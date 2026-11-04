@@ -1,15 +1,15 @@
 {
   "driver_id": "pegasis_bridge",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "icon": "uc:integration",
   "min_core_api": "0.20.0",
-  "name": { "en": "Pegasis Bridge" },
+  "name": { "en": "Pegasus Bridge" },
   "description": {
-    "en": "Links this remote to a Pegasis Hub (a Docker container that runs integrations) over one fast connection. Every integration on the hub appears here under Integrations, as if it were installed on the remote."
+    "en": "Links this remote to a Pegasus Hub (a Docker container that runs integrations) over one fast connection. Every integration on the hub appears here under Integrations, as if it were installed on the remote."
   },
   "developer": { "name": "Sat32blk", "url": "https://github.com/Sat32blk/pegasis" },
   "setup_data_schema": {
-    "title": { "en": "Connect to a Pegasis Hub" },
+    "title": { "en": "Connect to a Pegasus Hub" },
     "settings": [
       { "id": "hub", "label": { "en": "Hub address (host or host:port, shown on the hub's page)" }, "field": { "text": { "value": "" } } },
       { "id": "token", "label": { "en": "Pairing code (shown on the hub's page)" }, "field": { "text": { "value": "" } } },

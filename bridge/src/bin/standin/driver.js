@@ -1,4 +1,4 @@
-// Pegasis stand-in: installed by the Pegasis Bridge over an integration that is moving to the hub
+// Pegasus stand-in: installed by the Pegasus Bridge over an integration that is moving to the hub
 // (the remote's "update existing driver" install, so it keeps the integration's ID, name, version
 // and config files). It does two things:
 //   1. hands the integration's config and data files to the Bridge (which sends them to the hub);
@@ -58,7 +58,7 @@ async function handOver() {
       log(`settings handed over (${files.config.length} config, ${files.data.length} data files)`);
       return;
     } catch (e) {
-      if (attempt % 10 === 0) log(`waiting for the Pegasis Bridge: ${e.message}`);
+      if (attempt % 10 === 0) log(`waiting for the Pegasus Bridge: ${e.message}`);
       await new Promise((r) => setTimeout(r, Math.min(30000, 2000 * (attempt + 1))));
     }
   }

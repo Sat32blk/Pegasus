@@ -100,7 +100,7 @@ export class CoreClient {
       name,
       scopes: ["admin"],
       active: true,
-      description: "Created by the Pegasis Bridge integration (registers hub-hosted integrations)"
+      description: "Created by the Pegasus Bridge integration (registers hub-hosted integrations)"
     });
     if (!res || !res.api_key) throw new CoreError("API key response had no api_key", 0, "http");
     return res.api_key;

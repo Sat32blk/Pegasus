@@ -1,4 +1,4 @@
-# Pegasis Hub
+# Pegasus Hub
 # On OpenMediaVault: Services → Compose → Files → Add, paste this, and change the data folder
 # (the left side of "volumes") to a folder on one of your shares.
 services:
@@ -17,6 +17,6 @@ services:
       - PGID=100
       - TZ=America/New_York
       # - PEGASIS_PASSWORD=change-me # optional login for the page (remotes use the pairing code)
-      # - PEGASIS_NAME=Pegasis Hub   # name shown to remotes
+      # - PEGASIS_NAME=Pegasus Hub   # name shown to remotes
     volumes:
       - ./data:/data                 # installed integrations, their settings and logs, pairing code

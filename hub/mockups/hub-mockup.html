@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pegasis Hub — mockup</title>
+<title>Pegasus Hub — mockup</title>
 <style>
 :root{
   --bg:#f3f4f7;--panel:#ffffff;--panel2:#f8f9fb;--ink:#151821;--mute:#646b7a;--faint:#9aa0ad;--line:#e3e6ec;
@@ -219,7 +219,7 @@ ol.howto li{margin:6px 0}
       <div class="logo">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-1 5-4 6-8 1 3 3 5 6 5 2 0 3-1 4-3"/><path d="M14 4l2 3"/></svg>
       </div>
-      <div>Pegasis Hub <small>0.1.0 · nas · x86_64</small></div>
+      <div>Pegasus Hub <small>0.1.0 · nas · x86_64</small></div>
     </div>
     <div class="remotes" id="remotes"></div>
     <button class="iconbtn" id="pairBtn" title="Pair a remote">
@@ -393,7 +393,7 @@ ol.howto li{margin:6px 0}
         <div class="pairbox"><button class="copy" data-toast="Copied">Copy</button><div class="k">Pairing code</div><div class="v">kst4u-ndp8d-dcm3y-9iagg</div></div>
       </div>
       <ol class="howto">
-        <li>Download <a href="#">Pegasis Bridge 0.1.0</a> (uc-intg-pegasis-bridge-0.1.0.tar.gz).</li>
+        <li>Download <a href="#">Pegasus Bridge 0.1.0</a> (uc-intg-pegasis-bridge-0.1.0.tar.gz).</li>
         <li>In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload it.</li>
         <li>Start its setup and enter the address and code above, plus the web-configurator PIN.</li>
         <li>The remote appears here, and every integration shows up on it.</li>
@@ -422,7 +422,7 @@ ol.howto li{margin:6px 0}
     <div data-pane="sys:link" hidden>
       <div class="toggle"><div class="t"><b>Compression</b><span>Off is faster on a home network. Turn it on only for slow or remote links.</span></div><input type="checkbox" class="sw"></div>
       <div class="field" style="margin-top:12px"><label>Heartbeat</label><select class="inp"><option>Every 5 s (drop after 15 s)</option><option>Every 2 s (drop after 6 s)</option><option>Every 15 s (drop after 45 s)</option></select></div>
-      <dl class="kvs"><dt>Protocol</dt><dd>Pegasis link v1 · binary, multiplexed</dd><dt>Added delay</dt><dd>≈0.25 ms per message (measured)</dd></dl>
+      <dl class="kvs"><dt>Protocol</dt><dd>Pegasus link v1 · binary, multiplexed</dd><dt>Added delay</dt><dd>≈0.25 ms per message (measured)</dd></dl>
     </div>
     <div data-pane="sys:upd" hidden>
       <div class="toggle"><div class="t"><b>Check for new releases</b><span>Every 6 hours, for integrations installed from GitHub.</span></div><input type="checkbox" class="sw" checked></div>
@@ -522,7 +522,7 @@ function render() {
   // banner
   const crashed = ITEMS.find((i) => i.status === "crashed");
   $("#banner").innerHTML = !remotesState.length && ITEMS.length
-    ? `<div class="banner warn"><span>📱</span><span><b>No remote is linked yet.</b> Install Pegasis Bridge on your remote so these integrations show up there.</span><button class="btn primary" data-a="pair">Pair a remote</button></div>`
+    ? `<div class="banner warn"><span>📱</span><span><b>No remote is linked yet.</b> Install Pegasus Bridge on your remote so these integrations show up there.</span><button class="btn primary" data-a="pair">Pair a remote</button></div>`
     : crashed ? `<div class="banner warn"><span>⚠</span><span><b>${esc(crashed.name)} keeps crashing</b> (5 times in 10 min). Its devices show as unavailable on the remotes.</span><button class="btn" data-a="logs" data-id="${crashed.id}">See the log</button></div>` : "";
 
   // tiles
@@ -650,7 +650,7 @@ function showLogs(it) {
   $("#logTitle").textContent = `${it.name} — log`;
   const base = it.status === "crashed"
     ? [["t", "12:01:12.300"], ["", "INFO  ucapi.api.init: Driver is up: kodi, version: 1.8.3"], ["e", "ERROR kodi: cannot connect to 192.0.2.30:9090: Connection refused"], ["e", "Traceback (most recent call last):"], ["e", '  File "intg-kodi/driver.py", line 412, in on_connect'], ["e", "ConnectionRefusedError: [Errno 111] Connection refused"], ["h", "[hub] exited (code 1) after 2 s"], ["h", "[hub] restarting in 16 s"]]
-    : [["h", "[hub] starting: $VENV/bin/python src/driver.py (port 10100)"], ["", "INFO  profiles.load: Loaded device profiles: 214"], ["", "INFO  ucapi.api.init: Driver is up: androidtv, version: 0.10.0"], ["h", "[hub] ready"], ["", "INFO  WS: Client added (Living Room via Pegasis link)"], ["", "INFO  WS: Client added (Bedroom via Pegasis link)"], ["", "INFO  tv.connect: Shield TV (192.0.2.21) connected"]];
+    : [["h", "[hub] starting: $VENV/bin/python src/driver.py (port 10100)"], ["", "INFO  profiles.load: Loaded device profiles: 214"], ["", "INFO  ucapi.api.init: Driver is up: androidtv, version: 0.10.0"], ["h", "[hub] ready"], ["", "INFO  WS: Client added (Living Room via Pegasus link)"], ["", "INFO  WS: Client added (Bedroom via Pegasus link)"], ["", "INFO  tv.connect: Shield TV (192.0.2.21) connected"]];
   const extra = ["DEBUG entity_command media_player.shield: play_pause", "DEBUG -> entity_change media_player.shield state=PLAYING", "DEBUG entity_command media_player.shield: volume_up", "INFO  tv: app changed to Plex"];
   let i = 0;
   const pre = $("#logPre");
