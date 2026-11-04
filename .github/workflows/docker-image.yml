@@ -1,6 +1,5 @@
 # Builds the Pegasus Hub image for Intel/AMD (amd64) and ARM (arm64) and publishes it to
-# GitHub's container registry as ghcr.io/sat32blk/pegasus-hub (and, for setups made before
-# the rename, ghcr.io/sat32blk/pegasis-hub: same image), and to Docker Hub as
+# GitHub's container registry as ghcr.io/sat32blk/pegasus-hub, and to Docker Hub as
 # <DOCKERHUB_USERNAME>/pegasus-hub once the repository variable DOCKERHUB_USERNAME and
 # the secret DOCKERHUB_TOKEN are set (Settings > Secrets and variables > Actions).
 #   - every push to the main branch updates the :latest tag
@@ -63,7 +62,6 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository_owner }}/pegasus-hub
-            ghcr.io/${{ github.repository_owner }}/pegasis-hub
             name=docker.io/${{ vars.DOCKERHUB_USERNAME }}/pegasus-hub,enable=${{ vars.DOCKERHUB_USERNAME != '' }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
