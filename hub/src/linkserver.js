@@ -175,7 +175,7 @@ export class LinkServer {
           link,
           json(T.WELCOME, {
             proto: PROTO_VERSION,
-            hub: process.env.PEGASIS_NAME || "Pegasus Hub",
+            hub: process.env.PEGASUS_NAME || "Pegasus Hub",
             version: this.version,
             drivers: this.catalog(),
             ...this.#removed()
@@ -292,7 +292,7 @@ export class LinkServer {
       id: meta.id,
       closed: false,
       chain: Promise.resolve(),
-      shaper: process.env.PEGASIS_SHAPING === "0" ? null : new SessionShaper({ keepConnected: () => !!this.store.get(meta.id)?.keepConnected, count: (kind, n) => this.net.shaped(meta.id, kind, n) })
+      shaper: process.env.PEGASUS_SHAPING === "0" ? null : new SessionShaper({ keepConnected: () => !!this.store.get(meta.id)?.keepConnected, count: (kind, n) => this.net.shaped(meta.id, kind, n) })
     };
     link.sessions.set(channel, s);
     this.net.sessionOpened(meta.id);

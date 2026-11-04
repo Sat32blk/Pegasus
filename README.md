@@ -12,7 +12,7 @@ Why:
 | **Pegasus Hub** (`hub/`) | Docker on your server (amd64 or arm64) | Installs integrations from GitHub or an archive, runs each one, restarts crashes, keeps their settings across updates. Management page on port 9600. |
 | **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. Moves integrations between the remote and the hub. |
 
-Current versions: **Hub 0.7.2**, **Bridge 0.4.0**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
+Current versions: **Hub 0.7.3**, **Bridge 0.4.0**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
 
 ## Contents
 
@@ -29,26 +29,47 @@ Current versions: **Hub 0.7.2**, **Bridge 0.4.0**. Tested on a Remote 3 (firmwar
 
 ### 1. Start the hub
 
+Save this as `docker-compose.yml` (or paste it into your Compose tool) and change the data folder (the left side of `volumes`) to a folder of your own:
+
 ```yaml
 services:
   pegasus-hub:
     image: ghcr.io/sat32blk/pegasus-hub:latest
     container_name: pegasus-hub
-    network_mode: host        # integrations find devices with mDNS / SSDP
     restart: unless-stopped
+    # Host networking: integrations find their devices with mDNS / SSDP broadcasts, which don't
+    # cross Docker's own networks. Only PEGASUS_PORT is used on the server's network.
+    network_mode: host
     environment:
-      - PEGASIS_PORT=9600     # page and link
-      - PUID=1000             # integrations run as this user, not root
-      - PGID=100
-      - TZ=America/New_York
-      # - PEGASIS_PASSWORD=change-me   # optional login for the page
+      - PEGASUS_PORT=9600              # the page (http://server:9600); remotes link here too
+      - PUID=1000                      # integrations run as this user, not root
+      - PGID=100                       # ...and this group
+      - TZ=America/New_York            # your time zone, for logs and charts
+      # - PEGASUS_PASSWORD=change-me   # optional login for the page (remotes use the pairing code)
+      # - PEGASUS_NAME=Pegasus Hub     # name the remotes show for this hub
     volumes:
-      - ./data:/data
+      - ./data:/data                   # integrations, their settings and logs, pairing code, history
 ```
 
-Open `http://<server>:9600`.
+Start it with `docker compose up -d` and open `http://<server>:9600`. Update later with `docker compose pull && docker compose up -d`.
 
-On **OpenMediaVault** (Compose plugin): Services → Compose → Files → Add, paste the file, point the data folder (left side of `volumes`) at a share, save, **Up**. To update later: **Pull**, then **Up**.
+| Setting | Default | What it does |
+|---|---|---|
+| `PEGASUS_PORT` | `9600` | Port for the page and for the remotes' link. Integrations use ports from 10100 up, but only inside the container. |
+| `PUID` / `PGID` | `1000` / `100` | The user and group integrations run as (they're third-party code, so not root). `PUID=0` runs them as root. The hub gives the data folder to this user. |
+| `TZ` | UTC | Time zone for logs and charts. |
+| `PEGASUS_PASSWORD` | none | Adds a login to the page. The remotes use the pairing code, and artwork links are signed, so neither needs it. |
+| `PEGASUS_NAME` | `Pegasus Hub` | The hub's name as shown to remotes. |
+| data folder | — | Everything the hub keeps: back this folder up; nothing else is needed. |
+
+**On OpenMediaVault** (Compose plugin):
+1. **Services → Compose → Files → Add**, give it a name, paste the file above.
+2. Change `./data` to a folder on one of your shares, e.g. `/srv/dev-disk-by-uuid-…/appdata/pegasus`.
+3. **Save**, then **Up**. To update later: **Pull**, then **Up**.
+
+**If the image won't pull** (`denied` or `not found`): the package is private on GitHub. Either make it public (GitHub → Packages → **pegasus-hub** → Package settings → Change visibility → Public), or log the server in once with `docker login ghcr.io` (user name, and a token with `read:packages`).
+
+**Coming from an earlier version?** Only the image line changes: `ghcr.io/sat32blk/pegasis-hub` became `ghcr.io/sat32blk/pegasus-hub`. Keep your data folder and everything carries over. Settings written as `PEGASIS_…` still work; `PEGASUS_…` is the new spelling.
 
 ### 2. Install the Bridge on the remote
 
@@ -143,10 +164,8 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file), includ
 
 ## Install details
 
-- **Port 9600** is the page and the link. Each integration also uses a port from 10100 up, only inside the container.
 - **The data folder** holds the integrations, their settings and logs, the pairing code, battery history and the artwork cache (up to 300 MB). Back it up; nothing else is needed.
 - **Building on the server** instead of pulling: replace `image:` with `build: <path to the hub folder>` and run `docker compose up -d --build`.
-- `PEGASIS_NAME` sets the name shown to remotes; `PEGASIS_PASSWORD` adds a login to the page (remotes use the pairing code; artwork links don't need the password).
 
 How the hub runs each kind of integration:
 
@@ -171,7 +190,7 @@ npm run sync-proto   # after editing shared/linkproto.js
 
 `npm test` runs: the link codec, log masking, battery figures, network statistics, resource history, event shaping, artwork, the Bridge's ID rules, **moves** against `test/mock-remote.js` (a stand-in for the remote's core that behaves like the real one: summary driver list, entity selection by the integration's own IDs, references stripped on driver deletion, no entity listing while an integration is inactive), and an **end-to-end** test (mock core ⇄ Bridge ⇄ hub ⇄ real Node and Python integrations, including standby and artwork).
 
-Run the hub without Docker: `cd hub && PEGASIS_DATA=./data node src/server.js`. Pushes to `main` run the tests and publish amd64 + arm64 images (see PUBLISHING.md).
+Run the hub without Docker: `cd hub && PEGASUS_DATA=./data node src/server.js`. Pushes to `main` run the tests and publish amd64 + arm64 images (see PUBLISHING.md).
 
 ## Limits and plans
 

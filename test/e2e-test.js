@@ -130,7 +130,7 @@ function startBridge({ hubPort, token, corePort, state = {} }) {
 
 // ------------------------------------------------------------------------------------------------------
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pegasis-e2e-"));
-process.env.PEGASIS_ALLOW_LOCAL = "1";
+process.env.PEGASUS_ALLOW_LOCAL = "1";
 const hub = await startHub({ port: 0, dataDir, quiet: true });
 const core = await mockCore();
 let bridge;

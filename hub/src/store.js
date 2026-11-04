@@ -10,7 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readJson, writeJson } from "./util.js";
 
-const PORT_BASE = Number(process.env.PEGASIS_DRIVER_PORT_BASE || 10100);
+const PORT_BASE = Number(process.env.PEGASUS_DRIVER_PORT_BASE || 10100);
 
 export class Store {
   constructor(dataDir) {

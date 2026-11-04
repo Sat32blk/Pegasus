@@ -8,7 +8,7 @@ set -e
 
 PUID="${PUID:-1000}"
 PGID="${PGID:-100}"
-DATA="${PEGASIS_DATA:-/data}"
+DATA="${PEGASUS_DATA:-${PEGASIS_DATA:-/data}}" # PEGASIS_*: compose files from before the rename
 
 mkdir -p "$DATA/home" "$DATA/.cache"
 

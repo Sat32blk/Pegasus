@@ -22,9 +22,9 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 # Shown on the hub page; set by the GitHub build from the release tag.
 ARG VERSION=""
-ENV PEGASIS_VERSION=${VERSION} \
-    PEGASIS_DATA=/data \
-    PEGASIS_PORT=9600 \
+# PEGASUS_PORT (9600) and PEGASUS_DATA (/data) have their defaults in the hub itself, so a
+# compose file from before the rename (PEGASIS_*) still wins.
+ENV PEGASUS_VERSION=${VERSION} \
     NODE_ENV=production \
     PYTHONUNBUFFERED=1 \
     MALLOC_ARENA_MAX=2
@@ -32,7 +32,7 @@ VOLUME /data
 EXPOSE 9600
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PEGASIS_PORT||9600)+'/api/status').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+((process.env.PEGASUS_PORT||process.env.PEGASIS_PORT)||9600)+'/api/status').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "src/server.js"]

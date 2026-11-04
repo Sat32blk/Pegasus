@@ -5,6 +5,7 @@
 //   http://<host>:9600/api/...   REST API used by the page
 //   ws://<host>:9600/link        the link (Bridge connects here)
 
+import "./env.js"; // PEGASIS_* settings from before the rename
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
@@ -22,11 +23,11 @@ import { Resources, batteryComparison } from "./resources.js";
 import { Artwork } from "./artwork.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// PEGASIS_VERSION is set by the image build (release tag, or dev-<commit> for main-branch builds)
-const VERSION = process.env.PEGASIS_VERSION || readJson(path.join(HERE, "..", "package.json"), {}).version || "0.0.0";
-const PORT = Number(process.env.PEGASIS_PORT || 9600);
-const DATA = process.env.PEGASIS_DATA || "/data";
-const PASSWORD = process.env.PEGASIS_PASSWORD || "";
+// PEGASUS_VERSION is set by the image build (release tag, or dev-<commit> for main-branch builds)
+const VERSION = process.env.PEGASUS_VERSION || readJson(path.join(HERE, "..", "package.json"), {}).version || "0.0.0";
+const PORT = Number(process.env.PEGASUS_PORT || 9600);
+const DATA = process.env.PEGASUS_DATA || "/data";
+const PASSWORD = process.env.PEGASUS_PASSWORD || "";
 const UPDATE_CHECK_MS = 6 * 3600 * 1000;
 
 const log = (...a) => console.log(new Date().toISOString(), "[hub]", ...a);
@@ -195,7 +196,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       if (!p[1] && m === "POST") {
         const body = await readBody(req, 64 * 1024);
         const b = JSON.parse(body.toString() || "{}");
-        if (b.local && process.env.PEGASIS_ALLOW_LOCAL !== "1") throw new InstallError("Installing from a local folder is disabled");
+        if (b.local && process.env.PEGASUS_ALLOW_LOCAL !== "1") throw new InstallError("Installing from a local folder is disabled");
         const job = mgr.install({ git: b.url, ref: b.ref, local: b.local });
         return send(res, 202, { job: job.id });
       }
