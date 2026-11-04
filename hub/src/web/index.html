@@ -533,8 +533,8 @@ function showIntegrations() {
       <td><span class="status st-${esc(m.status.state)}">${STATE[m.status.state] || esc(m.status.state)}</span></td>
       <td class="num">${m.usage?.cpu != null ? m.usage.cpu.toFixed(1) + "%" : "—"}</td><td class="num">${m.usage ? m.usage.memMB + " MB" : "—"}</td>
       <td>${(m.shownAs || []).map((r) => r.id ? `<span class="ck">●</span> ${esc(shortName(r.remote))}` : `<span class="wt">●</span> ${esc(r.problem)}`).join("<br>") || "—"}</td></tr>`).join("");
-    const custom = list.filter((i) => i.type === "CUSTOM" && i.driver_id !== "pegasis_bridge");
-    const bridgeSlot = list.some((i) => i.type === "CUSTOM" && i.driver_id === "pegasis_bridge") ? 1 : 0;
+    const custom = list.filter((i) => i.type === "CUSTOM" && !isBridge(i.driver_id));
+    const bridgeSlot = list.some((i) => i.type === "CUSTOM" && isBridge(i.driver_id)) ? 1 : 0;
     const builtin = list.filter((i) => i.type === "LOCAL" && i.instance);
     const other = list.filter((i) => i.type === "EXTERNAL" && !fromHub.has(i.driver_id));
     const row = (i, note) => `<tr><td><b>${esc(i.name)}</b> <span class="sub2" style="display:inline">${esc(i.version)}</span></td><td>${note}</td></tr>`;
@@ -609,6 +609,9 @@ function renderResources() {
   $("#winBody").scrollTop = keep;
   $$("#winBody [data-hours]").forEach((b) => (b.onclick = () => { resState.hours = Number(b.dataset.hours); store.set("pg-res-hours", resState.hours); renderResources(); }));
 }
+
+/** The Bridge itself (pegasis_bridge before it was renamed). */
+const isBridge = (id) => id === "pegasus_bridge" || id === "pegasis_bridge";
 
 /* ---------------- integrations table ---------------- */
 const STATE = { running: "Running", starting: "Starting", stopped: "Stopped", crashed: "Crashed", error: "Error" };
@@ -730,14 +733,14 @@ function renderRemotes() {
       // on the hub: registered from the hub, or a move involving it is under way / stopped
       const isHub = (i) => fromHub.has(i.driver_id) || standIns.has(i.driver_id) || (moves[i.driver_id] && moves[i.driver_id].status !== "done" && i.type !== "LOCAL") || (i.type === "EXTERNAL" && moves[i.driver_id]?.dir === "toHub");
       const hub = list.filter(isHub).sort(byName);
-      const installed = list.filter((i) => i.type === "CUSTOM" && !hub.includes(i) && i.driver_id !== "pegasis_bridge").sort(byName);
+      const installed = list.filter((i) => i.type === "CUSTOM" && !hub.includes(i) && !isBridge(i.driver_id)).sort(byName);
       const rest = list.filter((i) => i.type !== "CUSTOM" && !hub.includes(i) && (i.type !== "LOCAL" || i.instance)).sort(byName);
       rows = (hub.length ? `<div class="rgroup">Running on the hub</div>${hub.map(one).join("")}` : "")
         + (installed.length ? `<div class="rgroup">Installed on the remote</div>${installed.map(one).join("")}` : "")
         + (rest.length ? `<details class="more" data-remote="${esc(r.remote)}" ${openDetails.has(r.remote) ? "open" : ""}><summary>${rest.length} built-in and other integrations (they don't use install slots)</summary>${rest.map(one).join("")}</details>` : "");
     }
     return `<section class="card"><div class="listhead"><h2>On ${esc(shortName(r.remote))}</h2>
-      ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used${list.some((i) => i.driver_id === "pegasis_bridge" && i.type === "CUSTOM") ? " (one by Pegasus Bridge)" : ""}</span>`}
+      ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used${list.some((i) => isBridge(i.driver_id) && i.type === "CUSTOM") ? " (one by Pegasus Bridge)" : ""}</span>`}
       <button class="btn" style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div>${rows}</section>`;
   }).join("");
 }

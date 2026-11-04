@@ -1,6 +1,6 @@
 {
   "name": "pegasis",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "type": "module",
   "description": "Pegasus: run Unfolded Circle integrations in Docker and present them on the remote as if installed on it.",

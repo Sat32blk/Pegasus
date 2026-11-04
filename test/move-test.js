@@ -278,14 +278,14 @@ try {
 
   step("the Bridge itself can't move; Remote Self-Control can");
   const archiveAs = (id) => createTarGz(entries.map((e) => (e.name.endsWith("driver.json") ? { ...e, data: JSON.stringify({ ...driverJson, driver_id: id }) } : e)));
-  remote.install(archiveAs("pegasis_bridge"), false);
+  remote.install(archiveAs("pegasus_bridge"), false);
   remote.install(archiveAs("self_control"), false);
   const all = await hub.link.call("test-remote", "remote.integrations", {}, 10000);
-  const bridgeRow = all.find((i) => i.driver_id === "pegasis_bridge");
+  const bridgeRow = all.find((i) => i.driver_id === "pegasus_bridge");
   assert.equal(bridgeRow.movable, false);
   assert.equal(all.find((i) => i.driver_id === "self_control").movable, true, "self_control should be movable now");
-  await assert.rejects(hub.link.call("test-remote", "move.toHub", { driverId: "pegasis_bridge" }, 10000).then(() => waitMove("pegasis_bridge")).then((m) => { if (m.status !== "done") throw new Error(m.error); }), /Bridge itself/);
-  console.log(`  pegasis_bridge: not movable (${bridgeRow.why}); self_control: movable`);
+  await assert.rejects(hub.link.call("test-remote", "move.toHub", { driverId: "pegasus_bridge" }, 10000).then(() => waitMove("pegasus_bridge")).then((m) => { if (m.status !== "done") throw new Error(m.error); }), /Bridge itself/);
+  console.log(`  pegasus_bridge: not movable (${bridgeRow.why}); self_control: movable`);
 
   step("settings that point at the remote itself are switched to its address on the hub, and back");
   {

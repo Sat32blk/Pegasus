@@ -86,17 +86,17 @@ function saveConfig() {
 // Entities: link status + latency (handy on a page while setting things up)
 // ---------------------------------------------------------------------------
 
-const statusSensor = new uc.Sensor("pegasis_link", { en: "Pegasus Hub link" }, {
+const statusSensor = new uc.Sensor("pegasus_link", { en: "Pegasus Hub link" }, {
   area: "Pegasus",
   attributes: { state: uc.SensorStates.On, value: "not set up" }
 });
-const latencySensor = new uc.Sensor("pegasis_latency", { en: "Pegasus Hub latency" }, {
+const latencySensor = new uc.Sensor("pegasus_latency", { en: "Pegasus Hub latency" }, {
   area: "Pegasus",
   deviceClass: uc.SensorDeviceClasses.Custom,
   options: { custom_unit: "ms", decimals: 1 },
   attributes: { state: uc.SensorStates.Unavailable, value: 0, unit: "ms" }
 });
-const resyncButton = new uc.Button("pegasis_resync", { en: "Pegasus: re-sync integrations" }, {
+const resyncButton = new uc.Button("pegasus_resync", { en: "Pegasus: re-sync integrations" }, {
   area: "Pegasus",
   cmdHandler: async () => {
     registrar?.resync();
@@ -354,7 +354,7 @@ api.on(uc.Events.SubscribeEntities, async () => {
 
 for (const e of [statusSensor, latencySensor, resyncButton]) api.addAvailableEntity(e);
 api.init(DRIVER_JSON, setupHandler);
-cfgFile = path.join(api.getConfigDirPath(), "pegasis_bridge.json");
+cfgFile = path.join(api.getConfigDirPath(), "pegasus_bridge.json");
 config = loadConfig();
 battery = new BatteryTracker({
   getCore: () => core,

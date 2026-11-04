@@ -7,7 +7,7 @@ Two parts:
 | Part | Runs on | What it does |
 |---|---|---|
 | **Pegasus Hub** (`hub/`) | Docker (your server) | Installs integrations from GitHub or from a custom-integration archive, runs each one in the container, restarts them if they crash, keeps their settings across updates. Has a management page on port 9600. |
-| **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasis_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. |
+| **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. |
 
 ## How it works
 

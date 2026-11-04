@@ -39,7 +39,7 @@ function readTree(root) {
 async function control(method, route, body) {
   const res = await fetch(`${cfg.control}${route}`, {
     method,
-    headers: { "Content-Type": "application/json", "X-Pegasis-Token": cfg.token },
+    headers: { "Content-Type": "application/json", "X-Pegasus-Token": cfg.token },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20000)
   });

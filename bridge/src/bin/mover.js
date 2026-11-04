@@ -26,7 +26,7 @@ import { createTarGz } from "./tar.js";
 import { RemoteOps } from "./remote.js";
 
 /** Integrations that must stay on the remote (they control the remote itself). */
-export const STAYS = new Set(["pegasis_bridge"]); // the Bridge itself; everything else talks to the remote over its API
+export const STAYS = new Set(["pegasus_bridge", "pegasis_bridge"]); // the Bridge itself (pegasis_bridge: before the rename); everything else talks to the remote over its API
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class Mover {
@@ -89,7 +89,7 @@ export class Mover {
     if (!m) return send(404, { error: "not found" });
     const driverId = decodeURIComponent(m[1]);
     const mv = this.state.moves[driverId];
-    const token = String(req.headers["x-pegasis-token"] || "");
+    const token = String(req.headers["x-pegasus-token"] || req.headers["x-pegasis-token"] || ""); // older stand-ins send the old name
     if (!mv?.token || !safeEqual(token, mv.token)) return send(403, { error: "unknown stand-in" });
     if (m[2] === "endpoint" && req.method === "GET") {
       const port = await this.tunnels.ensure(mv.hubId, this.registrar.state.hosted?.[mv.hubId]?.port);

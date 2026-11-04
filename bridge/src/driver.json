@@ -1,6 +1,6 @@
 {
-  "driver_id": "pegasis_bridge",
-  "version": "0.3.8",
+  "driver_id": "pegasus_bridge",
+  "version": "0.4.0",
   "icon": "uc:integration",
   "min_core_api": "0.20.0",
   "name": { "en": "Pegasus Bridge" },
