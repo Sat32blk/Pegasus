@@ -142,7 +142,10 @@ export class LinkClient extends EventEmitter {
 
     ws.on("open", () => {
       ws._socket?.setNoDelay?.(true);
-      ws.send(json(T.HELLO, { proto: PROTO_VERSION, token: this.token, bridge: this.version, remote: this.remote, standby: this.standby }));
+      // lan: the remote's own address on the way to the hub (a hub in a Docker bridge network may
+      // only see the gateway's address)
+      const lan = String(ws._socket?.localAddress || "").replace(/^::ffff:/, "");
+      ws.send(json(T.HELLO, { proto: PROTO_VERSION, token: this.token, bridge: this.version, remote: this.remote, standby: this.standby, ...(lan ? { lan } : {}) }));
     });
 
     ws.on("message", (data, isBinary) => {

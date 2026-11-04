@@ -18,6 +18,7 @@ import { Manager } from "./manager.js";
 import { LinkServer } from "./linkserver.js";
 import { BatteryStore, summarize } from "./battery.js";
 import { registerMoveHandlers } from "./moves.js";
+import { publicAddress } from "./linkserver.js";
 import { InstallError } from "./installer.js";
 import { hostArch, readJson } from "./util.js";
 import { Resources, batteryComparison } from "./resources.js";
@@ -89,9 +90,31 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     const cands = [];
     for (const [name, list] of Object.entries(nets)) {
       if (/^(docker|veth|br-|hassio|lo)/.test(name)) continue;
-      for (const n of list || []) if (n.family === "IPv4" && !n.internal && !/^172\.(17|30)\./.test(n.address)) cands.push(n.address);
+      for (const n of list || []) if (n.family === "IPv4" && !n.internal) cands.push(n.address);
     }
-    return cands.find((a) => /^(192\.168|10\.)/.test(a)) || cands[0] || null;
+    // 172.16-31 is usually a Docker network, not the LAN
+    return cands.find((a) => /^(192\.168|10\.)/.test(a)) || cands.find((a) => !/^172\.(1[6-9]|2\d|3[01])\./.test(a)) || cands[0] || null;
+  }
+
+  /**
+   * The hub address to type into the Bridge: PEGASUS_ADDRESS when set; else what a linked Bridge
+   * dialed; else the address this page was opened at (right even in a Docker bridge network with
+   * the port published under another number); else a guess from the network interfaces.
+   */
+  function pairingAddress(req) {
+    const split = (hp) => {
+      const m = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(hp || "");
+      return m ? { address: m[1].replace(/^\[|\]$/g, ""), port: Number(m[2] || 80) } : null;
+    };
+    const fixed = publicAddress();
+    if (fixed) return { ...split(fixed), source: "PEGASUS_ADDRESS" };
+    for (const l of link.links) if (l.ready && l.host && !/^(127\.|localhost|\[::1\])/i.test(l.host)) return { ...split(l.host), source: "link" };
+    const host = String(req.headers["x-forwarded-host"] ? "" : req.headers.host || "");
+    const fromPage = split(host);
+    // opened on the server itself (localhost) or through a proxy: guess instead
+    if (fromPage && !/^(127\.|localhost$|::1$)/i.test(fromPage.address) && !req.headers["x-forwarded-for"]) return { ...fromPage, source: "page" };
+    const guess = lanAddress();
+    return { address: guess, port: server.address().port, source: "guess", dockerBridge: /^172\.(1[6-9]|2\d|3[01])\./.test(guess || "") };
   }
 
   /** When this remote's first integration finished moving to the hub (kept on the hub). */
@@ -144,7 +167,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       return send(res, 200, {
         version: VERSION,
         arch: hostArch(),
-        pairing: { token: store.hub.token, port: server.address().port, address: lanAddress() },
+        pairing: { token: store.hub.token, ...pairingAddress(req) },
         remotes: link.status(),
         hubMemMB: Math.round(process.memoryUsage().rss / 1048576),
         integrations: store.list().length

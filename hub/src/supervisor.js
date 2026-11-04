@@ -127,7 +127,28 @@ export class Supervisor extends EventEmitter {
     p.wantRunning = true;
     if (p.child) return;
     clearTimeout(p.timer);
-    this.#spawn(id, meta);
+    await this.#ensurePort(id);
+    if (p.child || !p.wantRunning) return;
+    this.#spawn(id, this.store.get(id));
+  }
+
+  /**
+   * With host networking the integrations' ports are on the server itself, where another program
+   * may already use one. Then the integration would fail to start while the hub (seeing the port
+   * open) took the other program for it; so it gets a free port first.
+   */
+  async #ensurePort(id) {
+    const meta = this.store.get(id);
+    if (!(await portOpen(meta.port))) return;
+    const taken = new Set(this.store.list().map((m) => m.port));
+    let port = meta.port + 1;
+    for (let i = 0; i < 500; i++, port++) {
+      if (taken.has(port) || (await portOpen(port))) continue;
+      this.note(id, `port ${meta.port} is used by another program on this server; using ${port}`);
+      this.store.put({ ...meta, port });
+      return;
+    }
+    this.note(id, `port ${meta.port} is used by another program and no free port was found nearby`);
   }
 
   #spawn(id, meta) {
@@ -156,7 +177,9 @@ export class Supervisor extends EventEmitter {
     this.note(id, `starting: ${[cmd, ...args].join(" ")} (port ${meta.port})`);
     let child;
     try {
-      child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+      // its own process group, so stopping it also stops what it started ("npm start" runs the
+      // driver as a child that would otherwise keep running and hold its port)
+      child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     } catch (e) {
       this.note(id, `could not start: ${e.message}`);
       this.#set(id, "error");
@@ -210,7 +233,9 @@ export class Supervisor extends EventEmitter {
     const delay = Math.min(60000, 1000 * 2 ** Math.min(p.restarts - 1, 6));
     this.#set(id, "crashed");
     this.note(id, `restarting in ${Math.round(delay / 1000)} s`);
-    p.timer = setTimeout(() => {
+    p.timer = setTimeout(async () => {
+      if (!p.wantRunning || !this.store.get(id) || p.child) return;
+      await this.#ensurePort(id);
       const meta = this.store.get(id);
       if (p.wantRunning && meta && !p.child) this.#spawn(id, meta);
     }, delay);
@@ -228,8 +253,8 @@ export class Supervisor extends EventEmitter {
     }
     if (!quiet) this.note(id, "stopping");
     const gone = new Promise((r) => child.once("exit", r));
-    child.kill("SIGTERM");
-    const t = setTimeout(() => child.kill("SIGKILL"), 5000);
+    killGroup(child, "SIGTERM");
+    const t = setTimeout(() => killGroup(child, "SIGKILL"), 5000);
     await gone;
     clearTimeout(t);
   }
@@ -280,5 +305,18 @@ function readTail(file) {
     return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).slice(-LOG_LINES).map(redact);
   } catch {
     return [];
+  }
+}
+
+/** Signals a driver's whole process group (falls back to the process alone). */
+function killGroup(child, sig) {
+  try {
+    process.kill(-child.pid, sig);
+  } catch {
+    try {
+      child.kill(sig);
+    } catch {
+      /* gone */
+    }
   }
 }

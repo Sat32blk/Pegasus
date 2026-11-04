@@ -98,8 +98,8 @@ export function walk(dir, maxDepth = 4, skip = new Set(["node_modules", ".git", 
 
 /** Simple semver-ish comparison of tags like v1.2.3 / 1.2.3-beta. */
 export function compareVersions(a, b) {
-  const pa = String(a).replace(/^v/i, "").split(/[.-]/);
-  const pb = String(b).replace(/^v/i, "").split(/[.-]/);
+  const pa = String(a).replace(/^v\.?/i, "").split(/[.-]/);
+  const pb = String(b).replace(/^v\.?/i, "").split(/[.-]/);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const x = pa[i] ?? "";
     const y = pb[i] ?? "";
@@ -123,7 +123,7 @@ export async function latestTag(url, log) {
     const tags = out
       .split("\n")
       .map((l) => l.split("refs/tags/")[1])
-      .filter((t) => t && /^v?\d+(\.\d+)+$/.test(t.trim()))
+      .filter((t) => t && /^v?\.?\d+(\.\d+)+$/i.test(t.trim()))
       .map((t) => t.trim());
     tags.sort(compareVersions);
     return tags.at(-1) || null;

@@ -24,7 +24,7 @@
 export const PROTO_VERSION = 1;
 
 export const T = Object.freeze({
-  HELLO: 0x01, // bridge -> hub, ch 0, JSON { proto, token, bridge, remote }
+  HELLO: 0x01, // bridge -> hub, ch 0, JSON { proto, token, bridge, remote, standby, lan? }
   WELCOME: 0x02, // hub -> bridge, ch 0, JSON { proto, hub, version, drivers }
   DENIED: 0x03, // hub -> bridge, ch 0, UTF-8 reason; hub closes the link after it
   CATALOG: 0x04, // hub -> bridge, ch 0, JSON { drivers, removed }

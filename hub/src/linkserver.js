@@ -141,6 +141,9 @@ export class LinkServer {
       ws,
       ready: false,
       address: (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").toString().replace(/^::ffff:/, ""),
+      // the address the Bridge dialed (what the remote can reach the hub at, even when the hub runs
+      // in a Docker bridge network with its port published under another number)
+      host: String(req.headers.host || ""),
       since: Date.now(),
       sessions: new Map(),
       remote: null,
@@ -166,6 +169,13 @@ export class LinkServer {
           return ws.close(4003, "denied");
         }
         link.ready = true;
+        // the remote's own address, as it reports it: behind Docker NAT the connection may come
+        // from the gateway instead, which isn't where the remote's API is
+        const lan = String(hello.lan || "");
+        if (isRemoteAddress(lan) && lan !== link.address) {
+          this.log(`link from ${link.address}: the remote reports its address as ${lan}`);
+          link.address = lan;
+        }
         link.standby = !!hello.standby;
         link.remote = String(hello.remote || "remote").slice(0, 80);
         link.bridge = String(hello.bridge || "?").slice(0, 20);
@@ -363,12 +373,30 @@ export class LinkServer {
 }
 
 /** How the remote reaches this hub: the address and port its link connected to. */
-function hubBase(link) {
+/** The hub as the remote reaches it ("http://host:port"), for links the remote fetches itself. */
+export function hubBase(link) {
+  const fixed = publicAddress();
+  if (fixed) return `http://${fixed}`;
+  if (link.host && !/^(127\.|localhost|\[::1\])/i.test(link.host)) return `http://${link.host}`;
   const sock = link.ws._socket;
   let a = String(sock?.localAddress || "").replace(/^::ffff:/, "");
   if (!a) return null;
   if (a.includes(":")) a = `[${a}]`;
   return `http://${a}:${sock.localPort}`;
+}
+
+/** PEGASUS_ADDRESS: "host" or "host:port" the remote reaches the hub at (set when it can't be found out). */
+export function publicAddress() {
+  const v = String(process.env.PEGASUS_ADDRESS || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!v) return null;
+  const port = process.env.PEGASUS_PORT || 9600;
+  return /:\d+$/.test(v) || /^\[.*\]:\d+$/.test(v) ? v : `${v.includes(":") ? `[${v}]` : v}:${port}`;
+}
+
+/** An address a remote can have on the LAN (not loopback, not unspecified). */
+function isRemoteAddress(a) {
+  if (/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(a)) return !/^(127\.|0\.)/.test(a) && a.split(".").every((n) => Number(n) <= 255);
+  return /^[0-9a-f:]+$/i.test(a) && a.includes(":") && a !== "::1" && a !== "::";
 }
 
 function tokenOk(given, expected) {

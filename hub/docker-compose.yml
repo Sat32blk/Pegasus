@@ -8,9 +8,10 @@ services:
     # build: .                         # or build it on the server: docker compose up -d --build
     container_name: pegasus-hub
     restart: unless-stopped
-    # Host networking: integrations find their devices with mDNS / SSDP broadcasts, which don't
-    # cross Docker's own networks. Only PEGASUS_PORT is used on the server's network; each
-    # integration uses a port from 10100 up, but only on 127.0.0.1 inside the container.
+    # Host networking: integrations find their devices with mDNS / SSDP broadcasts and wake them
+    # with Wake-on-LAN, which don't cross Docker's own networks. The page and the remotes' link use
+    # PEGASUS_PORT; each integration listens on 127.0.0.1 only, from port 10100 up (the hub skips
+    # ports another program already uses). Can't use host networking? See the README.
     network_mode: host
     environment:
       - PEGASUS_PORT=9600              # the page (http://server:9600); remotes link here too
@@ -19,5 +20,6 @@ services:
       - TZ=America/New_York            # your time zone, for logs and charts
       # - PEGASUS_PASSWORD=change-me   # optional login for the page (remotes use the pairing code)
       # - PEGASUS_NAME=Pegasus Hub     # name the remotes show for this hub
+      # - PEGASUS_ADDRESS=<server LAN address>  # only if the page shows a wrong hub address (bridge networks)
     volumes:
       - ./data:/data                   # integrations, their settings and logs, pairing code, history

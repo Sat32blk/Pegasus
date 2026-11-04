@@ -68,7 +68,7 @@ export class Manager extends EventEmitter {
   }
 
   async #commit(fetched, log, opts = {}) {
-    const prep = await this.installer.prepare(fetched.dir, log);
+    const prep = await this.installer.prepare(fetched.dir, log, { source: fetched.source, depsBefore: fetched.source?.type === "git" && fetched.source.ref ? fetched.source.committedAt : null });
     const id = prep.id;
     if (this.busy.has(id)) throw new InstallError(`${id} is already being installed`);
     this.busy.add(id);

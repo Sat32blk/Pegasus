@@ -335,6 +335,22 @@ try {
   await assert.rejects(hub.link.call("test-remote", "move.toHub", { driverId: "pegasus_bridge" }, 10000).then(() => waitMove("pegasus_bridge")).then((m) => { if (m.status !== "done") throw new Error(m.error); }), /Bridge itself/);
   console.log(`  pegasus_bridge: not movable (${bridgeRow.why}); self_control: movable`);
 
+  step("an integration whose driver.json doesn't link GitHub is found in the integration catalog");
+  {
+    const { _setCatalog } = await import("../hub/src/catalog.js");
+    const noGit = createTarGz(entries.map((e) => (e.name.endsWith("driver.json") ? { ...e, data: JSON.stringify({ ...driverJson, driver_id: "fyta_driver", home_page: "https://www.example.com", developer: { name: "x", url: "https://www.example.com" } }) } : e)));
+    remote.install(noGit, false);
+    _setCatalog({});
+    let row = (await hub.link.call("test-remote", "remote.integrations", {}, 10000)).find((i) => i.driver_id === "fyta_driver");
+    assert.equal(row.movable, false);
+    assert.match(row.why, /catalog/);
+    _setCatalog({ fyta_driver: "https://github.com/example/uc-intg-fyta" });
+    row = (await hub.link.call("test-remote", "remote.integrations", {}, 10000)).find((i) => i.driver_id === "fyta_driver");
+    assert.equal(row.movable, true, row.why);
+    assert.equal(row.home_page, "https://github.com/example/uc-intg-fyta");
+    console.log("  not movable without a repository; movable once the catalog names one");
+  }
+
   step("settings that point at the remote itself are switched to its address on the hub, and back");
   {
     const { pointSettings } = await import("../hub/src/moves.js");

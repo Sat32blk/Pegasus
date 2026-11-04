@@ -10,7 +10,13 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-100}"
 DATA="${PEGASUS_DATA:-${PEGASIS_DATA:-/data}}" # PEGASIS_*: compose files from before the rename
 
-mkdir -p "$DATA/home" "$DATA/.cache"
+if ! mkdir -p "$DATA/home" "$DATA/.cache" 2>/dev/null || ! touch "$DATA/.write-test" 2>/dev/null; then
+  echo "Pegasus Hub: can't write to $DATA (running as user $(id -u), group $(id -g))." >&2
+  echo "  Give that user write access to the folder mounted at $DATA, or let the container start as" >&2
+  echo "  root and set PUID / PGID to the owner of that folder (it then switches to that user)." >&2
+  exit 1
+fi
+rm -f "$DATA/.write-test"
 
 # Tools that write to $HOME (npm, pip, git) use the data folder, never the image.
 export HOME="$DATA/home"

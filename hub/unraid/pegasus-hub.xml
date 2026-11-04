@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- Unraid template for Pegasus Hub. Add it under Docker → Add Container → Template repositories
+     (https://github.com/Sat32blk/Pegasus) or copy it to /boot/config/plugins/dockerMan/templates-user/. -->
+<Container version="2">
+  <Name>pegasus-hub</Name>
+  <Repository>ghcr.io/sat32blk/pegasus-hub:latest</Repository>
+  <Registry>https://github.com/Sat32blk/Pegasus/pkgs/container/pegasus-hub</Registry>
+  <Network>host</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Sat32blk/Pegasus/issues</Support>
+  <Project>https://github.com/Sat32blk/Pegasus</Project>
+  <Overview>Runs Unfolded Circle Remote integrations on your server and links them to the remote through the Pegasus Bridge, so they don't use the remote's install slots or battery. Host networking lets integrations find devices on your network.</Overview>
+  <Category>HomeAutomation: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:9600]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/Sat32blk/Pegasus/main/hub/unraid/icon.png</Icon>
+  <Config Name="Data folder" Target="/data" Default="/mnt/user/appdata/pegasus-hub" Mode="rw" Description="Integrations, their settings and logs, pairing code and history. Back this up." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/pegasus-hub</Config>
+  <Config Name="Port" Target="PEGASUS_PORT" Default="9600" Mode="" Description="Port of the hub page and of the remotes' link." Type="Variable" Display="always" Required="true" Mask="false">9600</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User the integrations run as (Unraid: 99 = nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group the integrations run as (Unraid: 100 = users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Time zone" Target="TZ" Default="" Mode="" Description="For logs and charts, e.g. America/New_York." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Page password" Target="PEGASUS_PASSWORD" Default="" Mode="" Description="Optional login for the hub page. Remotes use the pairing code." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Hub address" Target="PEGASUS_ADDRESS" Default="" Mode="" Description="Only if the page shows a wrong hub address (bridge networking): the server's LAN address." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>

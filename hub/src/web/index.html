@@ -986,6 +986,7 @@ function showRemotes(tab) {
           <div class="pairbox"><button class="copy" data-copy="${esc(addr)}" data-what="the hub address">Copy</button><div class="k">Hub address (IP : port)</div><div class="v">${esc(addr)}</div></div>
           <div class="pairbox"><button class="copy" data-copy="${esc(st.pairing.token)}" data-what="the pairing code">Copy</button><div class="k">Pairing code (key)</div><div class="v">${esc(st.pairing.token)}</div></div>
         </div>
+        ${st.pairing.dockerBridge ? `<div class="banner warn" style="margin:0 0 12px"><span>⚠️</span><span>That address looks like a Docker network inside the server, which the remote can't reach. Use the server's own address (the one in your browser's address bar works), or set <b>PEGASUS_ADDRESS</b> in the container settings.</span></div>` : ""}
         <ol class="howto">
           <li>In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload the Pegasus Bridge archive.</li>
           <li>Start its setup. Paste the <b>hub address</b> and the <b>pairing code</b> with the Copy buttons above, and enter the web-configurator PIN.</li>

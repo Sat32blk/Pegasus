@@ -14,12 +14,14 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { run, sleep } from "./util.js";
 import { InstallError } from "./installer.js";
+import { catalogRepos } from "./catalog.js";
 
 export function registerMoveHandlers({ link, store, sup, mgr, log, sources = {} }) {
   // where code comes from (replaceable in tests): the GitHub tag for a version, and its release archive
-  const sourceFor = sources.prepare || (async ({ homePage, version }) => {
-    const repo = githubRepo(homePage);
-    if (!repo) throw new Error(`no GitHub repository in ${homePage}`);
+  const sourceFor = sources.prepare || (async ({ homePage, version, driverId }) => {
+    // the integration's own home page, else the Unfolded Circle integration catalog
+    const repo = githubRepo(homePage) || githubRepo((await catalogRepos([driverId]))[driverId]);
+    if (!repo) throw new Error(`no GitHub repository in ${homePage || "its driver.json"}, and it isn't in the integration catalog`);
     const url = `https://github.com/${repo}.git`;
     return { git: url, ref: await tagFor(url, version) };
   });
@@ -40,6 +42,9 @@ export function registerMoveHandlers({ link, store, sup, mgr, log, sources = {} 
     store.put(m);
     link.catalogChanged();
   };
+
+  // GitHub repositories of integrations whose driver.json doesn't link one (from the catalog)
+  link.handle("catalog.repos", async ({ driverIds = [] }) => catalogRepos(driverIds.map(String).slice(0, 200)));
 
   link.handle("move.prepare", async ({ driverId, version, homePage }) => {
     const src = await sourceFor({ driverId, version, homePage });
@@ -194,8 +199,8 @@ export function pointSettings(dir, from, to) {
 async function tagFor(url, version) {
   const { out } = await run("git", ["ls-remote", "--tags", "--refs", url], { log: () => {}, timeoutMs: 60000 });
   const tags = out.split("\n").map((l) => l.split("refs/tags/")[1]?.trim()).filter(Boolean);
-  for (const t of [`v${version}`, String(version), `V${version}`]) if (tags.includes(t)) return t;
-  const loose = tags.find((t) => t.replace(/^v/i, "") === String(version).replace(/^v/i, ""));
+  for (const t of [`v${version}`, String(version), `V${version}`, `v.${version}`]) if (tags.includes(t)) return t;
+  const loose = tags.find((t) => t.replace(/^v\.?/i, "") === String(version).replace(/^v\.?/i, ""));
   if (loose) return loose;
   const base = String(version).replace(/^v/i, "").split(/[-+]/)[0];
   const hint = base !== String(version).replace(/^v/i, "") && tags.some((t) => t.replace(/^v/i, "") === base)

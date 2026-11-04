@@ -172,12 +172,20 @@ export class Mover {
   /** What may move, for the hub's list. */
   async integrations() {
     const list = await this.remote().integrations();
-    return list.map((i) => ({
-      ...i,
-      movable: i.type === "CUSTOM" && !STAYS.has(i.driver_id) && /github\.com\//.test(i.home_page),
-      why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "this is the Bridge itself" : !/github\.com\//.test(i.home_page) ? "no GitHub home page to get its code from" : null
-      // (move progress travels in the status report; not repeated here)
-    }));
+    // installed integrations whose driver.json doesn't link GitHub: the hub looks them up in the
+    // integration catalog
+    const unknown = list.filter((i) => i.type === "CUSTOM" && !STAYS.has(i.driver_id) && !/github\.com\//.test(i.home_page)).map((i) => i.driver_id);
+    const found = unknown.length ? await this.link.call("catalog.repos", { driverIds: unknown }, 20000).catch(() => ({})) : {};
+    return list.map((i) => {
+      const repo = /github\.com\//.test(i.home_page) ? i.home_page : found[i.driver_id] || "";
+      return {
+        ...i,
+        ...(repo !== i.home_page && repo ? { home_page: repo, repoFrom: "catalog" } : {}),
+        movable: i.type === "CUSTOM" && !STAYS.has(i.driver_id) && !!repo,
+        why: i.type !== "CUSTOM" ? (i.type === "EXTERNAL" ? "not installed on the remote" : "built into the remote") : STAYS.has(i.driver_id) ? "this is the Bridge itself" : !repo ? "no GitHub repository to get its code from (not in its driver.json, nor in the integration catalog)" : null
+        // (move progress travels in the status report; not repeated here)
+      };
+    });
   }
 
   // ------------------------------------------------------------------ to the hub
@@ -198,8 +206,12 @@ export class Mover {
     if (!d) throw new Error("not installed on the remote");
     if (d.driver_type !== "CUSTOM") throw new Error(`it is a ${String(d.driver_type).toLowerCase()} integration, not one installed on the remote`);
     if (STAYS.has(driverId)) throw new Error("the Bridge itself has to stay on the remote");
-    const homePage = d.home_page || d.developer?.url || "";
-    if (!/github\.com\//.test(homePage)) throw new Error("it has no GitHub home page to get its code from");
+    let homePage = d.home_page || d.developer?.url || "";
+    if (!/github\.com\//.test(homePage)) {
+      const found = await this.link.call("catalog.repos", { driverIds: [driverId] }, 20000).catch(() => ({}));
+      if (!found[driverId]) throw new Error("it has no GitHub home page to get its code from, and it isn't in the integration catalog");
+      homePage = found[driverId];
+    }
     const inst = (await remote.instancesOf(driverId))[0] || null;
 
     this.#step(driverId, "hub copy", `the hub installs ${text(d.name)} ${d.version} from ${homePage}`);
