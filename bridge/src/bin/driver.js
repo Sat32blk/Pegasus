@@ -206,7 +206,7 @@ async function startLink() {
   });
   link.handle("move.toHub", ({ driverId, keepSlot }) => mover.toHub(String(driverId), { keepSlot: !!keepSlot }));
   link.handle("move.toRemote", ({ driverId }) => mover.toRemote(String(driverId)));
-  link.handle("move.retry", ({ driverId }) => mover.retry(String(driverId)));
+  link.handle("move.retry", ({ driverId, leaveOut }) => mover.retry(String(driverId), { leaveOut }));
   link.handle("move.status", () => mover.summary());
   await registrar.restore();
   link.start();

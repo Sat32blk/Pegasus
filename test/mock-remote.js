@@ -31,6 +31,10 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pg-mockremote-"));
   const drivers = new Map(); // id -> { meta, type, proc, dir }
   const offers = new Map(); // driver id -> entity ids its driver offers (as the core would load them)
+  // entities a driver does not offer (even while selected): "always" = left over from an older
+  // version; "external" = only while it runs on the hub (e.g. a device the hub can't reach)
+  const notOffered = { always: new Set(), external: new Set() };
+  const offerFilter = (inst) => (e) => !notOffered.always.has(e) && !(drivers.get(inst.driver_id)?.type === "EXTERNAL" && notOffered.external.has(e));
   const instances = new Map(); // integration_id -> { integration_id, driver_id, name, icon, configured: [] }
   const entities = new Map(); // entity_id -> { entity_id, integration_id, name, icon, entity_type }
   const activities = new Map();
@@ -223,14 +227,14 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
           if (!(await active(inst.driver_id))) return send(400, { code: "BAD_REQUEST", message: "Integration is not active" });
           // and the driver's entity list is only known after a reload (or earlier use)
           if (url.searchParams.get("reload") === "true") inst.loaded = true;
-          const offered = inst.loaded || inst.configured.length ? [...new Set([...(offers.get(inst.driver_id) || []), ...inst.configured])] : [];
+          const offered = (inst.loaded || inst.configured.length ? [...new Set([...(offers.get(inst.driver_id) || []), ...inst.configured])] : []).filter(offerFilter(inst));
           const filter = url.searchParams.get("filter") || "NEW";
           const list = filter === "CONFIGURED" ? inst.configured : filter === "ALL" ? offered : offered.filter((e) => !inst.configured.includes(e));
           return send(200, paged(list.map((e) => ({ entity_id: e })), url));
         }
         if (p[3] === "entities" && M === "POST") {
           // like the real core: the driver's own entity IDs, only ones it has loaded; others are ignored
-          const offered = inst.loaded ? offers.get(inst.driver_id) || [] : [];
+          const offered = (inst.loaded ? offers.get(inst.driver_id) || [] : []).filter(offerFilter(inst));
           for (const e of body() || []) {
             if (typeof e !== "string" || !offered.includes(e)) continue;
             if (!inst.configured.includes(e)) inst.configured.push(e);
@@ -332,6 +336,7 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
     calls,
     root,
     install,
+    notOffered,
     failOnce(fn) {
       failNext = fn;
     },

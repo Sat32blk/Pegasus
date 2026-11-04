@@ -204,7 +204,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
       const driverId = String(b.driverId || "");
       if (!driverId) throw new InstallError("driverId missing");
       const method = b.retry ? "move.retry" : b.to === "remote" ? "move.toRemote" : "move.toHub";
-      return send(res, 202, await link.call(p[1], method, { driverId, keepSlot: !!b.keepSlot }, 30000));
+      const leaveOut = Array.isArray(b.leaveOut) ? b.leaveOut.map(String).slice(0, 200) : undefined;
+      return send(res, 202, await link.call(p[1], method, { driverId, keepSlot: !!b.keepSlot, ...(leaveOut ? { leaveOut } : {}) }, 30000));
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "log") {
       const lines = link.bridgeLog(p[1]);

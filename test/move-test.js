@@ -79,7 +79,7 @@ await mover.startControl();
 link.handle("remote.integrations", () => mover.integrations());
 link.handle("move.toHub", ({ driverId, keepSlot }) => mover.toHub(driverId, { keepSlot }));
 link.handle("move.toRemote", ({ driverId }) => mover.toRemote(driverId));
-link.handle("move.retry", ({ driverId }) => mover.retry(driverId));
+link.handle("move.retry", ({ driverId, leaveOut }) => mover.retry(driverId, { leaveOut }));
 link.on("state", (s) => s !== "up" && tunnels.dropAll());
 link.on("catalog", (d, r) => registrar.sync(d, r));
 link.start();
@@ -274,6 +274,54 @@ try {
     assert.equal(remote.drivers.get("sim_node")?.type, "CUSTOM", "the remote's own copy must stay");
     assert.deepEqual(view(), before, "references changed by the cleanup");
     console.log("  hub copy removed; the integration on the remote and every reference untouched");
+  }
+
+  step("entities the integration stopped offering before the move are left out instead of stopping it");
+  {
+    if (remote.drivers.get("sim_node")?.type !== "CUSTOM") {
+      await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+      assert.equal((await waitMove("sim_node")).status, "done");
+    }
+    const addGhost = (id) => {
+      const inst = remote.instances.get("sim_node.main");
+      if (!inst.configured.includes(id)) inst.configured.push(id);
+      remote.entities.set(P + id, { entity_id: P + id, integration_id: "sim_node.main", name: { en: id }, entity_type: "sensor" });
+      const a = remote.activities.get("act1").options;
+      a.included_entities.push({ entity_id: P + id });
+      a.sequences.on.push({ type: "command", command: { entity_id: P + id, cmd_id: "x" } });
+      a.user_interface.pages[0].items.push({ type: "text", text: id, command: { entity_id: P + id, cmd_id: "x" }, location: { x: 2, y: 0 } });
+    };
+    const mentions = (id) => JSON.stringify(remote.activities.get("act1")).includes(P + id);
+    addGhost("display_test");
+    remote.notOffered.always.add("display_test");
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    const m1 = await waitMove("sim_node");
+    assert.equal(m1.status, "done", m1.error);
+    assert.ok(m1.log.some((l) => /left out display_test/.test(l)), "left-out entity not reported");
+    assert.equal(mentions("display_test"), false, "the left-out entity is still used");
+    assert.ok(remote.instances.get("sim_node.main").configured.includes("sim_switch"));
+    assert.ok(mentions("sim_switch"), "the working entity lost its places");
+    console.log("  display_test (not offered before the move) left out; sim_switch and its places back");
+
+    step("an entity the hub copy doesn't offer stops the move; \"continue without it\" finishes it");
+    await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    addGhost("slider_tv_volume");
+    remote.notOffered.external.add("slider_tv_volume");
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    const m2 = await waitMove("sim_node");
+    assert.equal(m2.status, "failed");
+    assert.deepEqual(m2.missing, ["slider_tv_volume"]);
+    console.log(`  stopped: ${m2.error}`);
+    await hub.link.call("test-remote", "move.retry", { driverId: "sim_node", leaveOut: ["slider_tv_volume", "sim_switch"] }, 10000);
+    const m3 = await waitMove("sim_node");
+    assert.equal(m3.status, "done", m3.error);
+    assert.equal(mentions("slider_tv_volume"), false);
+    assert.ok(remote.instances.get("sim_node.main").configured.includes("sim_switch"), "an entity not in the failed list must not be dropped");
+    assert.ok(mentions("sim_switch"));
+    console.log("  continued without slider_tv_volume; only entities that failed can be left out");
+    remote.notOffered.always.clear();
+    remote.notOffered.external.clear();
   }
 
   step("the Bridge itself can't move; Remote Self-Control can");

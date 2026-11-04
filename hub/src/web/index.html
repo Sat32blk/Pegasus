@@ -679,7 +679,7 @@ function friendlyMoveError(err) {
   const e = String(err || "");
   let m;
   if ((m = /Invalid entity_id '([^']+)'/.exec(e) || /unknown entity (\S+)/.exec(e))) return `The remote refused to put <b>${esc(m[1].split(".").slice(2).join(".") || m[1])}</b> back into an activity, because that entity isn't selected on the remote yet.`;
-  if ((m = /could not select (\d+) of (\d+) entities[^:]*:\s*(.*)$/s.exec(e))) return `Couldn't select ${m[1]} of its ${m[2]} entities on the remote: ${esc(m[3])}`;
+  if ((m = /could not select (\d+) of (\d+) entities \(([^)]*)\):\s*(.*)$/s.exec(e))) return `Couldn't select ${m[1]} of its ${m[2]} entities on the remote (<b>${esc(m[3])}</b>): ${/does not offer/.test(m[4]) ? "the integration on the hub doesn't offer them. If they belong to a device that is off, turn it on and Retry; if they were removed from the integration, continue without them." : esc(m[4])}`;
   if (/Integration is not active/i.test(e)) return "The integration wasn't running at that moment, so the remote couldn't list its entities.";
   if (/no answer within|timed? ?out/i.test(e)) return "The remote or the hub didn't answer in time.";
   if (/not linked|link lost|link closed/i.test(e)) return "The remote's link to the hub dropped during the move.";
@@ -697,7 +697,7 @@ function moveBox(mv, i, remote) {
   const where = mv.dir === "toHub" ? "to the hub" : "back to the remote";
   if (mv.status === "failed") return `<div class="mv failed"><span class="status st-failed">Move ${where} stopped</span> <span class="sub2" style="display:inline">while ${esc(STEP[mv.step] || mv.step)}</span>
       <p class="what">${friendlyMoveError(mv.error)}</p>
-      <div class="acts"><button class="btn primary small" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(remote)}">Retry</button><span class="sub2" style="margin:0">Retry continues from where it stopped. What was saved is kept.</span></div>
+      <div class="acts"><button class="btn primary small" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(remote)}">Retry</button>${mv.missing?.length ? ` <button class="btn small" data-mv-retry="${esc(i.driver_id)}" data-leave-out="${esc(mv.missing.join(","))}" data-remote="${esc(remote)}">Continue without ${mv.missing.length === 1 ? "it" : "them"}</button>` : ""}<span class="sub2" style="margin:0">${mv.missing?.length ? `Retry waits for ${esc(mv.missing.join(", "))} again. <b>Continue without</b> finishes the move and takes ${mv.missing.length === 1 ? "that entity" : "those entities"} out of activities and pages (the integration doesn't offer ${mv.missing.length === 1 ? "it" : "them"}, so ${mv.missing.length === 1 ? "it" : "they"} can't work anyway).` : "Retry continues from where it stopped. What was saved is kept."}</span></div>
       <details><summary>Details</summary><pre>${esc(mv.error || "")}\n\n${esc(mv.log.slice(-8).join("\n"))}</pre></details></div>`;
   return `<div class="mv"><span class="status st-${mv.status === "done" ? "done" : "moving"}">${mv.status === "done" ? "Moved " + where : "Moving " + where}</span>${mv.status !== "done" ? ` <span class="sub2" style="display:inline">${esc(STEP[mv.step] || mv.step)}</span>` : ""}<pre>${esc(mv.log.slice(-5).join("\n"))}</pre></div>`;
 }
@@ -751,7 +751,7 @@ $("#remoteSections").addEventListener("click", async (ev) => {
     if (b.dataset.reload) return loadRemote(remote, true);
     if (b.dataset.mvHub) return confirmMove(remote, b.dataset.mvHub, b.dataset.name);
     if (b.dataset.mvBack) return confirmMoveBack(remote, b.dataset.mvBack, b.dataset.name);
-    if (b.dataset.mvRetry) { b.disabled = true; await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvRetry, retry: true }); toast("Retrying the move"); }
+    if (b.dataset.mvRetry) { b.disabled = true; const lo = b.dataset.leaveOut ? b.dataset.leaveOut.split(",") : null; await call("POST", `/remotes/${encodeURIComponent(remote)}/move`, { driverId: b.dataset.mvRetry, retry: true, ...(lo ? { leaveOut: lo } : {}) }); toast(lo ? "Continuing without " + lo.join(", ") : "Retrying the move"); }
     setTimeout(() => loadRemote(remote, true), 1500);
     refresh();
   } catch (e) { fail(e); }

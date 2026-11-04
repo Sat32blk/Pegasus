@@ -123,6 +123,16 @@ export class RemoteOps {
       for (const page of (await this.core.get(`/profiles/${enc(pid)}/pages`).catch(() => [])) || []) if (uses(page)) snap.profilePages.push({ profileId: pid, page });
       for (const group of (await this.core.get(`/profiles/${enc(pid)}/groups`).catch(() => [])) || []) if (uses(group)) snap.profileGroups.push({ profileId: pid, group });
     }
+    // what the integration itself offers right now: entities still selected on the remote but not
+    // offered (left over from an older version, or a device that's gone) may not come back after
+    // the move; they're then left out instead of stopping it (they didn't work before either)
+    if (snap.configured.length) {
+      const offered = await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=ALL&reload=true`).catch(() => null);
+      if (Array.isArray(offered) && offered.length) {
+        const have = new Set(offered.map((e) => String(e.entity_id || "")).map((x) => (x.startsWith(prefix) ? x.slice(prefix.length) : x)));
+        snap.notOfferedBefore = entityIdsOf(snap).filter((x) => !have.has(x));
+      }
+    }
     snap.references = countRefs(snap, prefix);
     return snap;
   }
@@ -228,8 +238,8 @@ export class RemoteOps {
     }
     if (!inst?.integration_id) throw new Error(`the remote did not create an instance for ${driverId}`);
     const ids = entityIdsOf(snapshot);
-    if (ids.length) await this.configureEntities(inst.integration_id, snapshot.instanceId, ids);
-    return inst.integration_id;
+    const skipped = ids.length ? await this.configureEntities(inst.integration_id, snapshot.instanceId, ids, { optional: snapshot.notOfferedBefore || [] }) : [];
+    return { id: inst.integration_id, skipped };
   }
 
   /** The integration's own IDs of the entities the remote has configured for an instance. */
@@ -242,10 +252,11 @@ export class RemoteOps {
    * POST /intg/instances/{id}/entities takes the integration's own entity IDs and silently ignores
    * ones it doesn't know yet; it only knows them after asking the driver (reload=true), which only
    * works once the instance is connected. So: wait for it, reload, select, check; stop with a clear
-   * error before anything else changes.
+   * error before anything else changes. Returns the optional entities it couldn't select.
    */
-  async configureEntities(instanceId, oldInstanceId, ids, { tries = 30, wait = 2000 } = {}) {
+  async configureEntities(instanceId, oldInstanceId, ids, { tries = 30, wait = 2000, optional = [] } = {}) {
     const want = ids.map((x) => (x.startsWith(oldInstanceId + ".") ? x.slice(oldInstanceId.length + 1) : x));
+    const opt = new Set(optional);
     let missing = want;
     let offered = null;
     let lastError = "";
@@ -256,7 +267,8 @@ export class RemoteOps {
         if (toAdd.length) await this.core.post(`/intg/instances/${enc(instanceId)}/entities`, toAdd);
         const have = new Set(await this.configuredOf(instanceId));
         missing = want.filter((x) => !have.has(x));
-        if (!missing.length) return;
+        // done when every entity that worked before is back (ones not offered before are a bonus)
+        if (!missing.some((x) => !opt.has(x))) return missing;
         lastError = "";
       } catch (e) {
         lastError = e.message; // e.g. "Integration is not active" while it is still connecting
@@ -269,7 +281,9 @@ export class RemoteOps {
       : notOffered.length
         ? `the integration does not offer ${notOffered.length === missing.length ? "them" : notOffered.join(", ")}; is the device on and reachable from the hub?`
         : "the remote did not accept them";
-    throw new Error(`could not select ${missing.length} of ${want.length} entities (${missing.join(", ")}): ${why}`);
+    const err = new Error(`could not select ${missing.length} of ${want.length} entities (${missing.join(", ")}): ${why}`);
+    err.missing = missing;
+    throw err;
   }
 
   async deleteDriver(id) {
@@ -300,6 +314,39 @@ export function entityIdsOf(snap) {
   const re = new RegExp(`"${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^"]+)"`, "g");
   for (const m of text.matchAll(re)) ids.add(m[1]);
   return [...ids].filter(Boolean);
+}
+
+/**
+ * A copy of a snapshot without some entities (the integration's own IDs): they are not selected
+ * again, and every place that used them is written back without them. References are counted
+ * again, so the check after the restore expects exactly what is left.
+ */
+export function leaveOut(snap, ids, why = "left out") {
+  const prefix = snap.instanceId + ".";
+  const drop = new Set(ids.map((x) => (String(x).startsWith(prefix) ? String(x) : prefix + x)));
+  const own = [...drop].map((x) => x.slice(prefix.length));
+  const isGone = (v) => typeof v === "string" && drop.has(v);
+  const refersGone = (v) => isGone(v) || (v && typeof v === "object" && !Array.isArray(v) && isGone(v.entity_id));
+  const clean = (o) => {
+    // in a list, an item goes when it is a reference to a dropped entity or names one directly (a
+    // sequence step or button press calling it); bigger items (pages, groups) stay, cleaned inside
+    const direct = (v) => refersGone(v) || (v && typeof v === "object" && !Array.isArray(v) && Object.values(v).some(refersGone));
+    if (Array.isArray(o)) return o.filter((v) => !direct(v)).map(clean);
+    if (!o || typeof o !== "object") return o;
+    const out = {};
+    for (const [k, v] of Object.entries(o)) {
+      if (k === "entity_id" ? false : refersGone(v)) continue;
+      out[k] = clean(v);
+    }
+    return out;
+  };
+  const out = { ...snap };
+  out.configured = (snap.configured || []).filter((x) => !drop.has(x) && !drop.has(prefix + x));
+  out.entities = (snap.entities || []).filter((e) => !drop.has(e.entity_id));
+  for (const k of ["activities", "macros", "profilePages", "profileGroups"]) out[k] = clean(snap[k] || []);
+  out.leftOut = [...new Set([...(snap.leftOut || []), ...own.map((id) => ({ id, why }))].map((x) => JSON.stringify(x)))].map((x) => JSON.parse(x));
+  out.references = countRefs(out, prefix);
+  return out;
 }
 
 /** Number of references to the instance in each part of a snapshot (used to check a restore). */

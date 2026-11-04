@@ -23,7 +23,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { createTarGz } from "./tar.js";
-import { RemoteOps } from "./remote.js";
+import { RemoteOps, leaveOut } from "./remote.js";
 
 /** Integrations that must stay on the remote (they control the remote itself). */
 export const STAYS = new Set(["pegasus_bridge", "pegasis_bridge"]); // the Bridge itself (pegasis_bridge: before the rename); everything else talks to the remote over its API
@@ -156,7 +156,7 @@ export class Mover {
   }
 
   summary() {
-    return Object.fromEntries(Object.entries(this.state.moves).map(([id, m]) => [id, { dir: m.dir, status: m.status, step: m.step, error: m.error || null, log: m.log.slice(-15), started: m.started, updated: m.updated, canRetry: m.status === "failed" && !!m.snapshotFile }]));
+    return Object.fromEntries(Object.entries(this.state.moves).map(([id, m]) => [id, { dir: m.dir, status: m.status, step: m.step, error: m.error || null, log: m.log.slice(-15), started: m.started, updated: m.updated, canRetry: m.status === "failed" && !!m.snapshotFile, missing: m.status === "failed" && m.snapshotFile ? missingOf(m) : [] }]));
   }
 
   #saveSnapshot(driverId, snap) {
@@ -265,7 +265,20 @@ export class Mover {
     const remote = this.remote();
     const mv = this.state.moves[driverId];
     this.#step(driverId, "instance", "creating the instance again and selecting the same entities");
-    const newId = await remote.recreateInstance(driverId, snap);
+    let made;
+    try {
+      made = await remote.recreateInstance(driverId, snap);
+    } catch (e) {
+      if (e.missing) mv.missing = e.missing; // the page offers "continue without them"
+      throw e;
+    }
+    delete mv.missing;
+    const newId = made.id;
+    if (made.skipped.length) {
+      snap = leaveOut(snap, made.skipped, "not offered by the integration before the move either");
+      mv.snapshotFile = this.#saveSnapshot(driverId, snap);
+      this.#step(driverId, "instance", `left out ${made.skipped.join(", ")}: the integration didn't offer ${made.skipped.length === 1 ? "it" : "them"} before the move either`);
+    }
     if (newId !== snap.instanceId) this.#step(driverId, "instance", `the remote named the instance ${newId} (was ${snap.instanceId}); references are rewritten`);
     mv.newInstanceId = newId;
     this.#step(driverId, "restore", "putting the saved references back");
@@ -278,10 +291,18 @@ export class Mover {
   }
 
   /** Retries a failed move from where it can safely continue (reads its saved snapshot). */
-  retry(driverId) {
+  retry(driverId, { leaveOut: drop = [] } = {}) {
     const mv = this.state.moves[driverId];
     if (!mv || mv.status !== "failed") throw new Error("no failed move to retry");
-    const snap = mv.snapshotFile ? JSON.parse(fs.readFileSync(mv.snapshotFile, "utf8")) : null;
+    let snap = mv.snapshotFile ? JSON.parse(fs.readFileSync(mv.snapshotFile, "utf8")) : null;
+    // "continue without them": the entities that couldn't be selected are left out of what is put back
+    drop = (Array.isArray(drop) ? drop : []).map(String).filter((x) => missingOf(mv).includes(x));
+    if (snap && drop.length) {
+      snap = leaveOut(snap, drop, "left out at the owner's request (the integration didn't offer them)");
+      mv.snapshotFile = this.#saveSnapshot(driverId, snap);
+      mv.log.push(`${new Date().toISOString().slice(11, 19)} continuing without ${drop.join(", ")}`);
+      delete mv.missing;
+    }
     this.running.add(driverId);
     mv.status = "running";
     mv.error = null;
@@ -457,3 +478,10 @@ function safeEqual(a, b) {
 }
 
 const text = (v) => (typeof v === "string" ? v : v?.en || (v && Object.values(v)[0]) || "");
+
+/** Entities a failed move couldn't select (recorded, or read from the error of an older Bridge). */
+function missingOf(mv) {
+  if (Array.isArray(mv.missing)) return mv.missing;
+  const m = /could not select \d+ of \d+ entities \(([^)]*)\)/.exec(mv.error || "");
+  return m ? m[1].split(",").map((x) => x.trim()).filter(Boolean) : [];
+}
