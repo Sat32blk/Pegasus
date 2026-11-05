@@ -20,3 +20,5 @@ if (process.env.SIM_WEB_PORT) {
   const http = await import("node:http");
   http.createServer((q, res) => (res.writeHead(200, { "content-type": "text/html" }), res.end("<h1>Sim settings</h1>"))).listen(Number(process.env.SIM_WEB_PORT), "0.0.0.0");
 }
+// SIM_POLL_URL (tests): poll a "device" every 2 s, like an integration watching its device
+if (process.env.SIM_POLL_URL) setInterval(() => fetch(process.env.SIM_POLL_URL).then((r) => r.text()).catch(() => {}), 2000);

@@ -5,10 +5,11 @@ FROM node:22-trixie-slim
 
 # python3 + venv for Python integrations (Debian 13: Python 3.13), git for installing from GitHub,
 # build tools for the occasional native Python / Node module, tini to forward signals and reap
-# processes. setpriv (util-linux, already in the base) drops root in docker-entrypoint.sh.
+# processes, iproute2 (ss) to count integrations' network traffic for the battery estimate.
+# setpriv (util-linux, already in the base) drops root in docker-entrypoint.sh.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      python3 python3-venv python3-pip python3-dev git ca-certificates tini \
+      python3 python3-venv python3-pip python3-dev git ca-certificates tini iproute2 \
       build-essential libffi-dev libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 

@@ -13,10 +13,12 @@ const LOG_LINES = 800;
 const LOG_FILE_MAX = 2 * 1024 * 1024;
 
 export class Supervisor extends EventEmitter {
-  constructor({ store, log }) {
+  /** extraEnv(id): environment added for one integration (the Pegasus hints for developers) */
+  constructor({ store, log, extraEnv = () => ({}) }) {
     super();
     this.store = store;
     this.log = log;
+    this.extraEnv = extraEnv;
     this.procs = new Map(); // id -> { child, state, since, restarts, timer, wantRunning, lines, startedAt, lastExit }
     this.usageNow = new Map(); // id -> { cpu (% of one core), memMB }
     this.lastTicks = new Map(); // id -> { ticks, at }
@@ -161,8 +163,10 @@ export class Supervisor extends EventEmitter {
     const cwd = path.join(appDir, meta.cwd || "");
     const venv = path.join(appDir, ".venv");
     const [cmd, ...args] = meta.command.map((c) => c.replace("$VENV", venv));
+    // the hub's own settings (its page password among them) aren't the integrations' business
+    const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^PEGAS[IU]S_/.test(k)));
     const env = {
-      ...process.env,
+      ...base,
       ...(meta.env || {}),
       UC_CONFIG_HOME: meta.dockerConfigPath ? configLink(id, this.store.configDir(id)) : this.store.configDir(id),
       // integrations installed by hub 0.3+ get their own data folder, like on the remote
@@ -173,7 +177,8 @@ export class Supervisor extends EventEmitter {
       UC_DISABLE_MDNS_PUBLISH: "true",
       PYTHONUNBUFFERED: "1",
       ...(meta.pythonPath?.length ? { PYTHONPATH: [...meta.pythonPath.map((p) => path.join(appDir, p)), process.env.PYTHONPATH].filter(Boolean).join(":") } : {}),
-      HOME: this.store.configDir(id)
+      HOME: this.store.configDir(id),
+      ...this.extraEnv(id)
     };
     fs.mkdirSync(env.UC_CONFIG_HOME, { recursive: true });
     fs.mkdirSync(env.UC_DATA_HOME, { recursive: true });
@@ -341,3 +346,4 @@ function configLink(id, real) {
     return real;
   }
 }
+

@@ -36,7 +36,7 @@ export class NetStats {
   #intg(id) {
     let s = this.intg.get(id);
     if (!s) {
-      s = { totals: newTraffic(), requests: 0, events: 0, resp: [], lastActive: null, sessionsOpened: 0, openFailed: 0, pending: new Map(), shaped: { unsubscribed: 0, repeat: 0, merged: 0, held: 0, standby: 0 } };
+      s = { since: Date.now(), totals: newTraffic(), requests: 0, events: 0, resp: [], lastActive: null, sessionsOpened: 0, openFailed: 0, pending: new Map(), shaped: { unsubscribed: 0, repeat: 0, merged: 0, held: 0, standby: 0 } };
       this.intg.set(id, s);
     }
     return s;
@@ -177,6 +177,7 @@ export class NetStats {
         openFailed: s.openFailed,
         shaped: s.shaped,
         lastActive: s.lastActive,
+        since: s.since,
         response: { n: ms.length, median: pct(ms, 0.5), p95: pct(ms, 0.95), slowest: slowest && { ms: slowest.ms, msg: slowest.msg, t: slowest.t } }
       };
     });

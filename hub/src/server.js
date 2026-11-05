@@ -20,8 +20,11 @@ import { BatteryStore, summarize } from "./battery.js";
 import { registerMoveHandlers } from "./moves.js";
 import { publicAddress } from "./linkserver.js";
 import { WebPages } from "./webpages.js";
+import { NetUsage } from "./netusage.js";
+import { estimateSavings, mergeModel, defaultModel } from "./batterymodel.js";
+import { buildHubInfo } from "./hubinfo.js";
 import { InstallError } from "./installer.js";
-import { hostArch, readJson } from "./util.js";
+import { hostArch, readJson, writeJson } from "./util.js";
 import { Resources, batteryComparison } from "./resources.js";
 import { Artwork } from "./artwork.js";
 
@@ -38,16 +41,50 @@ const log = (...a) => console.log(new Date().toISOString(), "[hub]", ...a);
 export async function startHub({ port = PORT, dataDir = DATA, password = PASSWORD, quiet = false, moveSources, fetchRemoteStatus } = {}) {
   const say = quiet ? () => {} : log;
   const store = new Store(dataDir);
-  const sup = new Supervisor({ store, log: say });
+  // what an integration can learn about running on the hub (see DEVELOPERS.md): environment at
+  // start, a file kept up to date, and GET /api/hubinfo from the hub's own machine
+  const infoFile = path.join(dataDir, "hubinfo.json");
+  let link = null;
+  let serverRef = null;
+  const hubInfo = () => buildHubInfo({ version: VERSION, port: serverRef?.address()?.port || port, remotes: link ? link.status() : [], battery });
+  const sup = new Supervisor({
+    store,
+    log: say,
+    extraEnv: () => {
+      const info = hubInfo();
+      const r = info.remotes[0];
+      return {
+        PEGASUS_HUB: "1",
+        PEGASUS_HUB_VERSION: String(VERSION),
+        PEGASUS_HUB_INFO: infoFile,
+        PEGASUS_HUB_API: `http://127.0.0.1:${info.port}/api/hubinfo`,
+        PEGASUS_LIMITS: "relaxed",
+        PEGASUS_CPU_CORES: String(info.host.cores),
+        PEGASUS_MEM_MB: String(info.host.memTotalMB),
+        ...(r?.address ? { PEGASUS_REMOTE_ADDRESS: r.address } : {})
+      };
+    }
+  });
   const scrubbed = sup.scrubLogs();
   if (scrubbed) say(`masked API keys, passwords and tokens in ${scrubbed} older log file(s)`);
   const mgr = new Manager({ store, supervisor: sup, log: say });
   const battery = new BatteryStore(dataDir);
   const artwork = new Artwork({ store, log: say });
-  const link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery, artwork });
+  link = new LinkServer({ store, supervisor: sup, version: VERSION, log: say, battery, artwork });
 
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
   const webPages = new WebPages({ sup, store });
+  const netUsage = new NetUsage({ sup, store });
+  const writeInfo = () => {
+    try {
+      writeJson(infoFile, hubInfo());
+    } catch {
+      /* the page still works */
+    }
+  };
+  const infoTimer = setInterval(writeInfo, 60000);
+  infoTimer.unref?.();
+  setTimeout(writeInfo, 2000).unref?.();
   const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
 
   // One copy of each remote's integration list for every open page. Reading it costs the remote
@@ -119,6 +156,57 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     return { address: guess, port: server.address().port, source: "guess", dockerBridge: /^172\.(1[6-9]|2\d|3[01])\./.test(guess || "") };
   }
 
+  /**
+   * Estimated battery saving for one remote: what the integrations on the hub would cost it if
+   * they ran on it (batterymodel.js), from the last day's measurements on the hub.
+   */
+  function batteryEstimate(remote) {
+    const now = Date.now();
+    const snap = resources.snapshot();
+    const net = link.net.snapshot({}, {});
+    const netById = new Map((net?.integrations || []).map((x) => [x.id, x]));
+    const st = link.status().find((r) => r.remote === remote) || null;
+    const shown = (m) => link.shownAs(m.id).some((x) => x.remote === remote && x.id);
+    const rows = store.list().filter((m) => shown(m) || !st).map((m) => {
+      const hist = snap.integrations.find((x) => x.id === m.id)?.history || [];
+      const cpu = hist.length ? hist.reduce((a, x) => a + (x.cpu || 0), 0) / hist.length : sup.usage(m.id)?.cpu || 0;
+      const dev = netUsage.rate(m.id);
+      const n = netById.get(m.id);
+      const nSec = n ? Math.max(60, (now - (n.since || now)) / 1000) : null;
+      const shaped = n ? Object.values(n.shaped || {}).reduce((a, v) => a + v, 0) : 0;
+      return {
+        id: m.id,
+        name: m.name,
+        cpu,
+        memMB: sup.usage(m.id)?.memMB ?? null,
+        netBytesPerSec: dev ? dev.bytesPerSec : null,
+        sendsPerSec: dev ? dev.packetsPerSec : null,
+        linkBytesPerSec: n ? (n.totals.bytesIn + n.totals.bytesOut) / nSec : 0,
+        linkMsgsPerSec: n ? Math.max(0, n.totals.msgsIn + n.totals.msgsOut - shaped) / nSec : 0
+      };
+    });
+    const samples = battery.samples(remote);
+    const all = summarize(samples, { from: now - 30 * 864e5 });
+    const hrs = (all.hours.awake || 0) + (all.hours.asleep || 0);
+    const rem = snap.remotes.find((x) => x.remote === remote)?.last || {};
+    return {
+      remote,
+      at: now,
+      networkMeasured: netUsage.available !== false,
+      ...estimateSavings(
+        rows,
+        {
+          awakeShare: hrs >= 24 ? all.hours.awake / hrs : null,
+          drainPerDay: all.drainPerHour.overall != null ? all.drainPerHour.overall * 24 : null,
+          memTotalMB: rem.memTotalMB ?? null,
+          memUsedMB: rem.memUsedMB ?? null
+        },
+        st?.bridgeCpu != null ? { cpu: st.bridgeCpu } : null,
+        mergeModel(store.hub.batteryModel, hostArch())
+      )
+    };
+  }
+
   /** When this remote's first integration finished moving to the hub (kept on the hub). */
   function firstMoveAt(remote) {
     const st = link.status().find((r) => r.remote === remote);
@@ -141,11 +229,17 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
 
   const page = () => fs.readFileSync(path.join(HERE, "web", "index.html"));
 
-  const server = http.createServer(async (req, res) => {
+  const server = (serverRef = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://x");
       // artwork links are signed: the remote fetches them without the page password
       if (req.method === "GET" && url.pathname.startsWith("/img/")) return await artwork.serve(req, res, url.pathname.slice(5).split("/"));
+      // integrations on this machine may read the hub's info without the page password
+      const fromHere = /^(127\.|::1$|::ffff:127\.)/.test(req.socket.remoteAddress || "") && !req.headers["x-forwarded-for"];
+      if (req.method === "GET" && url.pathname === "/api/hubinfo") {
+        if (!fromHere && password && !authOk(req, password)) return send(res, 401, { error: "login required" });
+        return send(res, 200, hubInfo());
+      }
       if (password && !authOk(req, password)) {
         res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Pegasus Hub"' });
         return res.end("Login required");
@@ -159,7 +253,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     } catch (e) {
       send(res, e instanceof InstallError ? 400 : 500, { error: e.message });
     }
-  });
+  }));
 
   async function api(req, res, url) {
     const p = url.pathname.slice(4).split("/").filter(Boolean).map(decodeURIComponent);
@@ -204,6 +298,17 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         artwork.clearCache();
         return send(res, 200, artwork.summary());
       }
+    }
+    if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery" && p[3] === "estimate") {
+      return send(res, 200, batteryEstimate(p[1]));
+    }
+    if (p[0] === "battery" && p[1] === "model") {
+      if (m === "PATCH") {
+        const b = JSON.parse((await readBody(req, 8 * 1024)).toString() || "{}");
+        store.hub.batteryModel = b.reset ? {} : { ...(store.hub.batteryModel || {}), ...b };
+        store.saveHub();
+      }
+      if (m === "GET" || m === "PATCH") return send(res, 200, { model: mergeModel(store.hub.batteryModel, hostArch()), defaults: defaultModel(hostArch()) });
     }
     if (m === "GET" && p[0] === "remotes" && p[1] && p[2] === "battery" && p[3] === "compare") {
       const split = Number(url.searchParams.get("split")) || firstMoveAt(p[1]);
@@ -325,6 +430,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
     clearInterval(updTimer);
     resources.close();
     webPages.close();
+    netUsage.close();
+    clearInterval(infoTimer);
     link.close();
     await sup.stopAll();
     await new Promise((r) => server.close(r));

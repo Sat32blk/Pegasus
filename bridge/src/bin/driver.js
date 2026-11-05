@@ -51,7 +51,9 @@ function scheduleReport() {
       notes: Object.fromEntries(s.notes),
       access: !!config?.apiKey,
       moves: mover ? mover.summary() : {},
-      log: recentLog.slice(-150)
+      log: recentLog.slice(-150),
+      // the Bridge's own processor time on the remote (the hub's battery estimate counts it)
+      cpu: { us: (() => { const u = process.cpuUsage(); return u.user + u.system; })(), at: Date.now() }
     });
     battery?.markSent(batt);
     resendBattery = false;

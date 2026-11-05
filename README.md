@@ -12,7 +12,7 @@ Why:
 | **Pegasus Hub** (`hub/`) | Docker on your server (amd64 or arm64) | Installs integrations from GitHub or an archive, runs each one, restarts crashes, keeps their settings across updates. Management page on port 9600. |
 | **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. Moves integrations between the remote and the hub. |
 
-Current versions: **Hub 0.9.5**, **Bridge 0.4.4**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
+Current versions: **Hub 0.10.0**, **Bridge 0.4.5**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
 
 ## Contents
 
@@ -160,6 +160,13 @@ Good to know:
 
 **The page itself:** the hub keeps one copy of each remote's integration list for every open page, asks the remote at most once a minute (never while it sleeps), and the Bridge answers "unchanged" instead of resending it.
 
+
+**Battery saving, estimated** (Battery tile and window)
+- For each integration on the hub, the hub estimates what it would cost the remote's battery if it ran there: its processor time on the hub, scaled to the remote's slower processor, plus the Wi-Fi energy of its traffic to its devices (counted from its TCP connections), minus what the remote now spends on the link to the hub for it and on the Bridge itself. Counted for the hours a day the remote is awake.
+- Shown as % battery per day and extra time per charge, per integration and in total, with the memory freed on the remote (memory has no battery cost of its own).
+- Every assumption (battery 8.9 Wh, remote processor ~5× slower than an x86 server core, 0.35 W per busy core, Wi-Fi energy per MB and per packet) is shown and can be changed. The measured drain before and after the first move is shown beside it as the check.
+
+**For integration developers:** integrations on the hub get `PEGASUS_HUB=1`, `PEGASUS_LIMITS=relaxed` and details of the server and the remote, so they can poll more often, keep connections and use more memory there. See [DEVELOPERS.md](DEVELOPERS.md).
 ## How it works
 
 ```
@@ -188,7 +195,7 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file), includ
 ## Install details
 
 - **The data folder** holds the integrations, their settings and logs, the pairing code, battery history and the artwork cache (up to 300 MB). Back it up; nothing else is needed.
-- **Pinning a version:** every build is also tagged with the hub's version, e.g. `image: ghcr.io/sat32blk/pegasus-hub:0.9.5` instead of `:latest`.
+- **Pinning a version:** every build is also tagged with the hub's version, e.g. `image: ghcr.io/sat32blk/pegasus-hub:0.10.0` instead of `:latest`.
 - **Building on the server** instead of pulling: replace `image:` with `build: <path to the hub folder>` and run `docker compose up -d --build`.
 
 How the hub runs each kind of integration:

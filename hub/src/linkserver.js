@@ -133,7 +133,7 @@ export class LinkServer {
   status() {
     return [...this.links]
       .filter((l) => l.ready)
-      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, problems: l.problems || {}, notes: l.notes || {}, moves: l.moves || {} }));
+      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, bridgeCpu: bridgeCpu(l), problems: l.problems || {}, notes: l.notes || {}, moves: l.moves || {} }));
   }
 
   #accept(ws, req) {
@@ -237,6 +237,11 @@ export class LinkServer {
         if (st.moves && typeof st.moves === "object") link.moves = st.moves;
         if (JSON.stringify([link.registered, link.moves && Object.fromEntries(Object.entries(link.moves).map(([k, v]) => [k, v.status]))]) !== before) this.onRemoteChange?.(link.remote);
         if (Array.isArray(st.battery) && st.battery.length && this.battery) this.battery.add(link.remote, st.battery.slice(-5000));
+        if (st.cpu && Number.isFinite(st.cpu.us) && Number.isFinite(st.cpu.at)) {
+          const c = { us: st.cpu.us, at: st.cpu.at };
+          if (!link.cpuFirst || c.us < (link.cpuLast?.us ?? 0)) link.cpuFirst = c; // Bridge restarted
+          link.cpuLast = c;
+        }
         if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
@@ -375,6 +380,13 @@ export class LinkServer {
 }
 
 /** How the remote reaches this hub: the address and port its link connected to. */
+/** The Bridge's average processor use on the remote (% of one core) since it linked, or null. */
+function bridgeCpu(l) {
+  const a = l.cpuFirst, b = l.cpuLast;
+  if (!a || !b || b.at - a.at < 60000) return null;
+  return Math.round(((b.us - a.us) / 1000 / (b.at - a.at)) * 1000) / 10;
+}
+
 /** The hub as the remote reaches it ("http://host:port"), for links the remote fetches itself. */
 export function hubBase(link) {
   const fixed = publicAddress();
