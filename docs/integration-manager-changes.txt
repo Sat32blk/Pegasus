@@ -1,0 +1,115 @@
+Integration Manager on Pegasus Hub: recommended changes
+=======================================================
+
+Checked against uc-intg-manager main (commit 6c311f3, version 3.2.2).
+
+Pegasus Hub runs Unfolded Circle integrations on a NAS/server and links them to the remote through
+the Pegasus Bridge (a custom integration on the remote). Every integration the hub runs gets these
+environment variables:
+
+  PEGASUS_HUB=1                 running on Pegasus Hub
+  PEGASUS_HUB_VERSION           hub version
+  PEGASUS_LIMITS=relaxed        no battery; plenty of memory and CPU
+  PEGASUS_REMOTE_ADDRESS        the linked remote's address (use instead of 127.0.0.1)
+  PEGASUS_CPU_CORES, PEGASUS_MEM_MB
+  PEGASUS_HUB_INFO              JSON file with hub + remote details (kept up to date)
+  PEGASUS_HUB_API               same JSON over HTTP, e.g. http://127.0.0.1:9600/api/hubinfo
+
+On the hub, UC_CONFIG_HOME is /data/integrations/<driver id>/config.
+
+
+1. Recognise Pegasus Hub as an external host  (the important one)
+------------------------------------------------------------------
+
+Today Integration Manager treats "UC_CONFIG_HOME starts with /config" as Docker and everything
+else as "running on the remote". On the hub that means it:
+  - only starts its web page while the remote is docked/charging, and only as owner,
+  - also binds the legacy notice port 8088 on the server.
+
+The same check is in three places. Suggest one helper, e.g. in const.py:
+
+    def runs_outside_remote() -> bool:
+        """True in Docker, on a PC/Mac, or on Pegasus Hub; False when bundled on the remote."""
+        config_home = os.getenv("UC_CONFIG_HOME", "")
+        return (
+            not config_home
+            or config_home.startswith("/config")
+            or os.getenv("PEGASUS_HUB") == "1"
+        )
+
+and use it:
+
+  device.py (~line 276)
+    -  config_home = os.getenv("UC_CONFIG_HOME", "")
+    -  self._is_external = not config_home or config_home.startswith("/config")
+    +  self._is_external = runs_outside_remote()
+
+  web_server.py (~line 3260)
+       def _is_external_runtime() -> bool:
+    -      config_home = os.getenv("UC_CONFIG_HOME", "")
+    -      return not config_home or config_home.startswith("/config")
+    +      return runs_outside_remote()
+
+  web_server.py (~line 4584)
+    -  is_docker = os.environ.get("UC_CONFIG_HOME", "").startswith("/config")
+    +  is_docker = runs_outside_remote()
+
+
+2. One API key per Integration Manager copy
+-------------------------------------------
+
+setup.py (~line 142):
+
+    api_key_response = await client.create_api_key(
+        "intg-manager", ["admin"], replace_existing=True
+    )
+
+With two copies (Docker + hub, or remote + hub), each setup replaces the other copy's key and the
+other copy quietly loses access. Suggest a name per host:
+
+    import socket
+    key_name = f"intg-manager-{socket.gethostname()}"[:40]
+    api_key_response = await client.create_api_key(
+        key_name, ["admin"], replace_existing=True
+    )
+
+
+3. Optional: label integrations that run on Pegasus Hub
+-------------------------------------------------------
+
+Integrations running on the hub appear on the remote as driver_type EXTERNAL with
+driver_url ws://127.0.0.1:<port> (the Bridge's local endpoint), and the remote has the
+"pegasus_bridge" driver installed. Integration Manager already skips updates for EXTERNAL drivers
+and only backs up CUSTOM ones, which is right: the hub updates and keeps the settings of the
+integrations it runs. A label would help users:
+
+    def runs_on_pegasus_hub(driver: dict, all_drivers: list[dict]) -> bool:
+        has_bridge = any(d.get("driver_id") == "pegasus_bridge" for d in all_drivers)
+        url = driver.get("driver_url", "") or ""
+        return (
+            has_bridge
+            and driver.get("driver_type") == "EXTERNAL"
+            and url.startswith("ws://127.0.0.1:")
+        )
+
+    -> show "Running on Pegasus Hub (updates and backups there)" instead of "External".
+
+Note: the driver list from GET /api/intg/drivers is a summary without driver_url; it's in the
+detail record (GET /api/intg/drivers/<id>).
+
+
+4. No change needed (FYI)
+-------------------------
+
+- The hub installs from the GitHub release tag's source and builds the React UI itself
+  (npm ci --include=dev && npm run build in ui/), like the release workflow. Please keep the
+  "build" script and outDir '../intg-manager/static/app'.
+- The registry (uc-intg-list registry.json) is used by the hub to find the GitHub repository of
+  integrations whose driver.json doesn't link one, so accurate driver_ids there help.
+
+
+5. Idea for later
+-----------------
+
+"Install on Pegasus Hub" next to "Install on remote": the hub accepts
+POST /api/integrations  {"git": "<repository url>"}  (HTTP basic auth if the hub has a password).
