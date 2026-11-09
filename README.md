@@ -25,6 +25,11 @@ Current versions: **Hub 0.10.2**, **Bridge 0.4.5**. Tested on a Remote 3 (firmwa
 - [Develop and test](#develop-and-test)
 - [Limits and plans](#limits-and-plans)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/dashboard-dark.png">
+  <img alt="The Pegasus Hub dashboard: integrations running on the hub, with CPU, memory, network and battery tiles" src="docs/dashboard.png">
+</picture>
+
 ## Quick start
 
 ### 1. Start the hub
