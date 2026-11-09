@@ -12,7 +12,7 @@ Why:
 | **Pegasus Hub** (`hub/`) | Docker on your server (amd64 or arm64) | Installs integrations from GitHub or an archive, runs each one, restarts crashes, keeps their settings across updates. Management page on port 9600. |
 | **Pegasus Bridge** (`bridge/`) | The remote (custom integration, `driver_id: pegasus_bridge`) | Keeps one fast link to the hub and makes every hub integration appear under **Integrations** on the remote, with its own setup, devices and entities. Moves integrations between the remote and the hub. |
 
-Current versions: **Hub 0.10.2**, **Bridge 0.4.5**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
+Current versions: **Hub 0.11.0**, **Bridge 0.4.5**. Tested on a Remote 3 (firmware 2.x) with Govee, LG webOS, Samsung TV, Lyrion Music Server and Plex running on the hub, including moves to the hub and back; Unfolded Circle's Android TV and Apple TV integrations also install and run from GitHub.
 
 ## Contents
 
@@ -134,6 +134,8 @@ Good to know:
 
 ## The hub page
 
+**New here?** The page starts a short guided tour the first time it opens, and a Getting started checklist stays at the top until a remote is linked and an integration added. **Help** (top right) replays the tours: getting started, adding an integration, moving one, and finding your way around.
+
 - **Four tiles**, each opening a page:
   - **Integrations**: what runs on the hub, what's installed on the remote and why it can or can't move, install slots.
   - **CPU & memory**: the hub and each integration (now, 1-hour average and peak, 1/6/24-hour charts), the server, and the **remote's own** load, memory and free storage, with moves marked.
@@ -200,7 +202,7 @@ Link protocol: `shared/linkproto.js` (documented at the top of the file), includ
 ## Install details
 
 - **The data folder** holds the integrations, their settings and logs, the pairing code, battery history and the artwork cache (up to 300 MB). Back it up; nothing else is needed.
-- **Pinning a version:** every build is also tagged with the hub's version, e.g. `image: ghcr.io/sat32blk/pegasus-hub:0.10.2` instead of `:latest`.
+- **Pinning a version:** every build is also tagged with the hub's version, e.g. `image: ghcr.io/sat32blk/pegasus-hub:0.11.0` instead of `:latest`.
 - **Building on the server** instead of pulling: replace `image:` with `build: <path to the hub folder>` and run `docker compose up -d --build`.
 
 How the hub runs each kind of integration:

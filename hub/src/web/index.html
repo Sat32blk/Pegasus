@@ -95,6 +95,26 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .iconbtn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;height:34px;min-width:34px;padding:0 10px;display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
 .iconbtn:hover{border-color:var(--accent)}
 @media (max-width:560px){.est th:nth-child(2),.est td:nth-child(2),.est th:nth-child(3),.est td:nth-child(3),.est th:nth-child(4),.est td:nth-child(4){display:none}}
+/* guided tours */
+.mi{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;color:var(--ink);font:inherit;text-decoration:none;cursor:pointer}
+.mi:hover,.mi:focus-visible{background:var(--panel2)}
+.tour-spot{position:fixed;z-index:1000;border-radius:12px;box-shadow:0 0 0 9999px rgba(8,10,20,.55),0 0 0 3px var(--accent);pointer-events:none;transition:all .25s ease}
+.tour-spot.none{box-shadow:0 0 0 9999px rgba(8,10,20,.55);width:0!important;height:0!important}
+.tour-card{position:fixed;z-index:1001;width:min(360px,calc(100vw - 32px));background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:16px 16px 12px;transition:top .25s ease,left .25s ease}
+.tour-card h3{margin:0 0 6px;font-size:16px}
+.tour-card p{margin:0 0 12px;color:var(--ink2,var(--ink));line-height:1.5;font-size:14px}
+.tour-card .tf{display:flex;align-items:center;gap:8px}
+.tour-card .tf .n{color:var(--mute);font-size:12px;margin-right:auto}
+.tour-card .dots{display:flex;gap:4px;margin:0 0 10px}
+.tour-card .dots i{width:6px;height:6px;border-radius:50%;background:var(--line)}
+.tour-card .dots i.on{background:var(--accent)}
+.checklist{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:0 0 14px}
+.checklist .ci{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px}
+.checklist .ci .mk{flex:0 0 22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:700}
+.checklist .ci.done .mk{background:var(--accent);border-color:var(--accent);color:#fff}
+.checklist .ci.done b{text-decoration:line-through;opacity:.7}
+.checklist .ci .sub2{margin:2px 0 6px}
+@media (prefers-reduced-motion:reduce){.tour-spot,.tour-card{transition:none}}
 a.btn{text-decoration:none;color:inherit;display:inline-block}
 .btn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 12px;font-weight:550;font-size:13px;white-space:nowrap}
 .btn:hover{border-color:var(--accent)}
@@ -318,6 +338,19 @@ ol.howto li{margin:6px 0}
     <div class="remotes" id="pills"></div>
     <button class="iconbtn" id="netBtn" title="Network statistics"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Network</span></button>
     <button class="iconbtn" id="remotesBtn" title="Remotes and pairing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="3"/><path d="M12 6v.01M10 10h4"/></svg><span class="lbl">Remotes</span></button>
+    <div class="menu" id="helpMenu">
+      <button class="iconbtn" id="helpBtn" title="Help and guided tours" aria-haspopup="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/></svg><span class="lbl">Help</span></button>
+      <div class="menu-pop" id="helpPop" role="menu">
+        <div class="sub2" style="padding:6px 10px 4px;margin:0">Guided tours</div>
+        <button class="mi" data-tour="start">Getting started: link a remote</button>
+        <button class="mi" data-tour="add">Add an integration</button>
+        <button class="mi" data-tour="move">Move an integration to the hub</button>
+        <button class="mi" data-tour="dashboard">Find your way around</button>
+        <div style="border-top:1px solid var(--line);margin:4px 0"></div>
+        <a class="mi" href="https://github.com/Sat32blk/Pegasus#readme" target="_blank" rel="noopener">Documentation ↗</a>
+        <a class="mi" href="https://github.com/Sat32blk/Pegasus/issues" target="_blank" rel="noopener">Report a problem ↗</a>
+      </div>
+    </div>
     <div class="menu" id="themeMenu">
       <button class="iconbtn" id="themeBtn" title="Theme" aria-haspopup="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 0 18c1.7 0 2-1.4 1.2-2.4-.8-1-.4-2.6 1.1-2.6H17a4 4 0 0 0 4-4c0-5-4-9-9-9z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/></svg><span class="lbl">Theme</span></button>
       <div class="themepop" role="dialog" aria-label="Theme">
@@ -332,6 +365,7 @@ ol.howto li{margin:6px 0}
 
 <main>
   <div id="banner"></div>
+  <div id="checklist"></div>
   <section class="tiles" id="tiles"></section>
 
   <section class="card">
@@ -433,6 +467,12 @@ async function refresh() {
     const [s, list] = await Promise.all([call("GET", "/status"), call("GET", "/integrations")]);
     st = s; items = list;
     render();
+    renderChecklist();
+    // first visit with nothing linked yet: offer the getting-started tour once
+    if (!st.remotes.length && !store_.get("pegasus.tour.start") && !store_.get("pegasus.tour.offered") && !tour.name && !win.kind) {
+      store_.set("pegasus.tour.offered", "1");
+      startTour("start");
+    }
   } catch (e) {
     $("#banner").innerHTML = `<div class="banner bad"><span>⚠</span><span><b>The hub isn't answering.</b> ${esc(e.message)}</span></div>`;
   }
@@ -769,6 +809,131 @@ $("#remoteSections").addEventListener("click", async (ev) => {
   } catch (e) { fail(e); }
 });
 
+
+/* ---------------- guided tours ---------------- */
+const store_ = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const TOURS = {
+  start: { title: "Getting started", steps: [
+    { title: "Welcome to Pegasus Hub", text: "The hub runs Unfolded Circle integrations on this server and links them to your remote, so they don't use its install slots or battery. This tour shows the setup: link a remote, then add or move integrations." },
+    { sel: "#remotesBtn", title: "1. Link your remote", text: "Remotes is where you pair a remote with this hub, and see the ones that are linked." },
+    { open: () => showRemotes("pair"), sel: "#bridgeDl", title: "Install the Pegasus Bridge", text: "Download the Bridge here. Then, in the remote's web configurator, choose Integrations → Add new → Install custom and upload it." },
+    { open: () => win.kind === "remotes" || showRemotes("pair"), sel: ".pair", title: "Hub address and pairing code", text: "The Bridge's setup asks for these two. The Copy buttons put them on the clipboard, ready to paste." },
+    { open: () => win.kind === "remotes" || showRemotes("pair"), sel: ".howto", title: "Run the Bridge's setup", text: "Start the Bridge's setup on the remote, paste the address and the code, and enter the web-configurator PIN. The remote then appears at the top of this page." },
+    { open: () => win.kind && closeWin(), sel: "#addBtn", title: "2. Add integrations", text: "Install an integration on the hub from its GitHub page, or upload the same .tar.gz you would upload to the remote. It then appears on every linked remote." },
+    { sel: () => $("#remoteSections .card") || $("#remoteSections"), title: "…or move the ones you have", text: () => st?.remotes?.length ? "The integrations installed on your remote are listed here. Move to hub carries their settings, entities, activities and pages across; Move back returns them." : "Once a remote is linked, the integrations installed on it are listed down here, each with a Move to hub button." },
+    { sel: "#tiles", title: "3. Keep an eye on things", text: "Each tile opens more detail: integrations and install slots, CPU and memory, the link to the remote, and the battery saving." },
+    { sel: "#helpBtn", title: "Help is always here", text: "Replay this tour, or the others, from the Help menu whenever you like." }
+  ] },
+  add: { title: "Add an integration", steps: [
+    { sel: "#addBtn", title: "Add an integration", text: "Start here to install an integration on the hub." },
+    { open: () => showAdd("git"), sel: "#gitUrl", title: "From GitHub", text: "Paste the integration's GitHub link, e.g. https://github.com/owner/uc-intg-something. The hub works out how to run it and installs what it needs." },
+    { open: () => win.kind === "add" || showAdd("git"), sel: "#gitRef", title: "Which version", text: "Leave it empty to follow new releases (Check for updates finds them). A tag such as v1.2.0 pins one version." },
+    { open: () => showAdd("upload"), sel: "#drop", title: "Or upload an archive", text: "Have a .tar.gz instead? Drop it here. Archives that contain a program built only for the remote's processor won't run on this server; use the GitHub source then." },
+    { open: () => win.kind === "add" || showAdd("upload"), sel: "#doInstall", title: "Install", text: "The install log opens and you can follow along. When it's done, open the integration on the remote under Integrations and run its setup, just as if it were installed there." },
+    { open: () => win.kind && closeWin(), sel: () => $("#intgTable tbody tr") || $("#listWrap"), title: "Your integrations", text: "Everything the hub runs is listed here, with its status, which remotes show it, CPU and memory. Logs shows what it's doing; ⋯ has its settings, update and remove." }
+  ] },
+  move: { title: "Move an integration", steps: [
+    { sel: () => $("#remoteSections .card") || $("#remoteSections"), title: "Integrations on your remote", text: () => st?.remotes?.length ? "Each linked remote has its own list: what runs on the hub, what's installed on the remote, and what's built into its firmware." : "Link a remote first (Help → Getting started). Its integrations then appear here." },
+    { sel: () => $("[data-mv-hub]") || $("#remoteSections .card"), title: "Move to the hub", text: () => ($("[data-mv-hub]") ? "" : "Integrations installed on the remote get a Move to hub button here (everything you have is on the hub already). ") + "One click moves an installed integration to the hub. Its settings, entities, activities, macros and pages come along, and its install slot on the remote is freed." },
+    { title: "What happens during a move", text: "The hub installs the same version from GitHub, takes over the integration's settings, swaps it in under the same ID and checks that every activity and page still uses it. Takes a minute or two; you can follow each step." },
+    { title: "If a move stops", text: "A device that's off or unreachable can stop a move. Retry carries on from where it stopped, nothing saved is lost. If some entities no longer exist, Continue without them finishes the move." },
+    { sel: () => $("[data-mv-back]") || $("#remoteSections .card"), title: "Move back", text: "Changed your mind? Move back to remote installs it on the remote again, with its current settings. That needs a .tar.gz in the integration's GitHub release." }
+  ] },
+  dashboard: { title: "Find your way around", steps: [
+    { sel: '[data-a="integrations"]', title: "Integrations", text: "How many integrations run on the hub, and how many of the remote's 10 install slots are used. Opens the full list per remote." },
+    { sel: '[data-a="resources"]', title: "CPU & memory", text: "The hub, each integration, the server, and the remote's own load and memory over the last day." },
+    { sel: '[data-a="network"]', title: "Network", text: "The link to the remote: round-trip time, traffic, and how quickly each integration answers. Updates the remote doesn't need, or that arrive while it sleeps, are held back." },
+    { sel: '[data-a="battery"]', title: "Battery", text: "The remote's battery, and the estimated saving from running integrations here. The assumptions behind the estimate are shown and can be changed." },
+    { sel: () => $("#intgTable .acts") || $("#listWrap"), title: "Each integration", text: "Stop or start it, read its log, and open its own web page when it has one. ⋯ holds its settings, Stay connected while the remote sleeps, update and remove." },
+    { sel: "#netBtn", title: "Network details", text: "The same network figures in full, any time." },
+    { sel: "#themeBtn", title: "Make it yours", text: "Pick a theme and an accent colour." }
+  ] }
+};
+
+const tour = { name: null, i: 0, spot: null, card: null };
+function startTour(name) {
+  endTour(true);
+  tour.name = name; tour.i = 0;
+  tour.spot = document.createElement("div"); tour.spot.className = "tour-spot none";
+  tour.card = document.createElement("div"); tour.card.className = "tour-card"; tour.card.setAttribute("role", "dialog"); tour.card.setAttribute("aria-live", "polite");
+  document.body.append(tour.spot, tour.card);
+  addEventListener("resize", placeTour); addEventListener("scroll", placeTour, true);
+  showStep();
+}
+function endTour(silent) {
+  if (!tour.name) return;
+  store_.set("pegasus.tour." + tour.name, "done");
+  tour.spot?.remove(); tour.card?.remove();
+  removeEventListener("resize", placeTour); removeEventListener("scroll", placeTour, true);
+  tour.name = null;
+  if (!silent) renderChecklist();
+}
+async function showStep() {
+  const t = TOURS[tour.name], s = t.steps[tour.i];
+  if (s.open) { try { await s.open(); } catch {} await new Promise((r) => setTimeout(r, 120)); }
+  const el = typeof s.sel === "function" ? s.sel() : s.sel ? $(s.sel) : null;
+  tour.el = el && el.offsetParent !== null && el.getBoundingClientRect().height > 4 ? el : null; // nothing to point at: centre the card
+  if (tour.el) tour.el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  const last = tour.i === t.steps.length - 1;
+  const text = typeof s.text === "function" ? s.text() : s.text;
+  tour.card.innerHTML = `<div class="dots">${t.steps.map((_, k) => `<i class="${k === tour.i ? "on" : ""}"></i>`).join("")}</div>
+    <h3>${esc(s.title)}</h3><p>${esc(text)}</p>
+    <div class="tf"><span class="n">${tour.i + 1} of ${t.steps.length}</span>
+      ${tour.i ? `<button class="btn small" data-tv="back">Back</button>` : `<button class="btn small" data-tv="skip">Skip</button>`}
+      <button class="btn primary small" data-tv="${last ? "done" : "next"}">${last ? "Done" : "Next"}</button></div>`;
+  tour.card.onclick = (e) => {
+    const b = e.target.closest("[data-tv]"); if (!b) return;
+    if (b.dataset.tv === "next") { tour.i++; showStep(); }
+    else if (b.dataset.tv === "back") { tour.i--; showStep(); }
+    else { endTour(); if (win.kind) closeWin(); }
+  };
+  setTimeout(placeTour, 30); setTimeout(placeTour, 350);
+  tour.card.querySelector('[data-tv="next"],[data-tv="done"]')?.focus({ preventScroll: true });
+}
+function placeTour() {
+  if (!tour.name) return;
+  const c = tour.card, pad = 6, m = 12, vw = innerWidth, vh = innerHeight;
+  const cw = c.offsetWidth, ch = c.offsetHeight;
+  if (!tour.el) {
+    tour.spot.className = "tour-spot none"; Object.assign(tour.spot.style, { left: vw / 2 + "px", top: vh / 2 + "px" });
+    Object.assign(c.style, { left: Math.max(16, (vw - cw) / 2) + "px", top: Math.max(16, (vh - ch) / 2) + "px" });
+    return;
+  }
+  const r = tour.el.getBoundingClientRect();
+  tour.spot.className = "tour-spot";
+  Object.assign(tour.spot.style, { left: r.left - pad + "px", top: r.top - pad + "px", width: r.width + pad * 2 + "px", height: r.height + pad * 2 + "px" });
+  let top = r.bottom + pad + m;
+  if (top + ch > vh - 16) top = r.top - pad - m - ch;
+  if (top < 16) top = Math.min(vh - ch - 16, Math.max(16, r.bottom + pad + m));
+  const left = Math.min(vw - cw - 16, Math.max(16, r.left + r.width / 2 - cw / 2));
+  Object.assign(c.style, { left: left + "px", top: top + "px" });
+}
+document.addEventListener("keydown", (e) => {
+  if (!tour.name) return;
+  if (e.key === "Escape") { e.stopImmediatePropagation(); endTour(); }
+  else if (e.key === "ArrowRight" && tour.i < TOURS[tour.name].steps.length - 1) { tour.i++; showStep(); }
+  else if (e.key === "ArrowLeft" && tour.i > 0) { tour.i--; showStep(); }
+}, true);
+$("#helpBtn").onclick = (e) => { e.stopPropagation(); $("#helpMenu").classList.toggle("open"); };
+$("#helpPop").onclick = (e) => { const b = e.target.closest("[data-tour]"); $("#helpMenu").classList.remove("open"); if (b) { if (win.kind) closeWin(); startTour(b.dataset.tour); } };
+document.addEventListener("click", (e) => { if (!e.target.closest("#helpMenu")) $("#helpMenu").classList.remove("open"); });
+
+/* getting-started checklist: shown until it's done or dismissed */
+function renderChecklist() {
+  const host = $("#checklist"); if (!host || !st) return;
+  const linked = st.remotes.length > 0, hasIntg = (items || []).length > 0;
+  if (store_.get("pegasus.checklist") === "hidden" || (linked && hasIntg)) { host.innerHTML = ""; return; }
+  const item = (done, title, text, tourName) => `<div class="ci ${done ? "done" : ""}"><span class="mk">${done ? "✓" : ""}</span><div><b>${title}</b><div class="sub2">${text}</div>${done ? "" : `<button class="btn small" data-tour="${tourName}">Show me</button>`}</div></div>`;
+  host.innerHTML = `<div class="nethead" style="margin:0 0 8px"><h4 style="margin:0">Getting started</h4><button class="btn small" id="clHide" style="margin-left:auto">Hide</button></div><div class="checklist">
+    ${item(linked, "Link your remote", "Install the Pegasus Bridge on the remote and pair it with this hub.", "start")}
+    ${item(hasIntg, "Add or move an integration", "Install one from GitHub, or move one from the remote to free its slot.", "add")}
+    ${item(store_.get("pegasus.tour.dashboard") === "done", "Find your way around", "A quick look at the tiles and each integration's buttons.", "dashboard")}</div>`;
+  host.onclick = (e) => {
+    if (e.target.id === "clHide") { store_.set("pegasus.checklist", "hidden"); host.innerHTML = ""; return; }
+    const b = e.target.closest("[data-tour]"); if (b) startTour(b.dataset.tour);
+  };
+}
+
 /* ---------------- window ---------------- */
 const win = { kind: null, timer: null, tab: null };
 function openWin({ kind, title, icon = "", size = "", tabs = null, tab = null, body = "", foot = "" }) {
@@ -1002,7 +1167,7 @@ function showRemotes(tab) {
         </div>
         ${st.pairing.dockerBridge ? `<div class="banner warn" style="margin:0 0 12px"><span>⚠️</span><span>That address looks like a Docker network inside the server, which the remote can't reach. Use the server's own address (the one in your browser's address bar works), or set <b>PEGASUS_ADDRESS</b> in the container settings.</span></div>` : ""}
         <ol class="howto">
-          <li>In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload the Pegasus Bridge archive.</li>
+          <li><a id="bridgeDl" href="https://github.com/Sat32blk/Pegasus/releases/latest" target="_blank" rel="noopener">Download the Pegasus Bridge</a> (<code>uc-intg-pegasus-bridge-….tar.gz</code>). In the remote's web configurator: <b>Integrations → Add new → Install custom</b>, and upload it.</li>
           <li>Start its setup. Paste the <b>hub address</b> and the <b>pairing code</b> with the Copy buttons above, and enter the web-configurator PIN.</li>
           <li>The remote appears here, and everything on the hub shows up on it.</li>
         </ol>
