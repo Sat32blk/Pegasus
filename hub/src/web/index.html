@@ -523,7 +523,7 @@ function renderTiles() {
   const sv = b?.saving;
   const t4 = `<button class="tile" data-a="battery"><div class="k">Battery</div>
     <div class="v">${last ? `${last.level}<small>%${last.charging ? " · charging" : ""}</small>` : "<small>—</small>"}</div>
-    <div class="sub2">${!r0 ? "no remote linked" : est && est.integrations.length ? `saves ≈ ${fmtPct(est.total.savedPctPerDay)} battery a day${est.total.extraHoursPerCharge ? ` · +${fmtHours(est.total.extraHoursPerCharge)} per charge` : ""}` : !b ? "" : !b.split ? "nothing on the hub yet" : !sv ? "measuring since the first move…" : sv.percentPerDay > 0 ? `saving about ${sv.percentPerDay}% a day (measured)` : "no saving measured yet"}</div></button>`;
+    <div class="sub2">${!r0 ? "no remote linked" : est && est.integrations.length ? (est.total.savedPctPerDay < 0 ? `costs ≈ ${fmtPct(-est.total.savedPctPerDay)} battery a day: open to see which` : `saves ≈ ${fmtPct(est.total.savedPctPerDay)} battery a day${est.total.extraHoursPerCharge ? ` · +${fmtHours(est.total.extraHoursPerCharge)} per charge` : ""}`) : !b ? "" : !b.split ? "nothing on the hub yet" : !sv ? "measuring since the first move…" : sv.percentPerDay > 0 ? `saving about ${sv.percentPerDay}% a day (measured)` : "no saving measured yet"}</div></button>`;
   $("#tiles").innerHTML = t1 + t2 + t3 + t4;
 }
 
@@ -1080,7 +1080,7 @@ async function showBattery(remote, days) {
   }
 }
 
-const fmtPct = (v) => (v == null ? "—" : v >= 10 ? Math.round(v) + "%" : v >= 1 ? v.toFixed(1) + "%" : v > 0 ? v.toFixed(2) + "%" : "0%");
+const fmtPct = (v) => (v == null ? "—" : v < 0 ? "−" + fmtPct(-v) : v >= 10 ? Math.round(v) + "%" : v >= 1 ? v.toFixed(1) + "%" : v > 0 ? v.toFixed(2) + "%" : "0%");
 const fmtHours = (h) => (h == null ? "—" : h >= 48 ? (h / 24).toFixed(1) + " days" : h >= 1 ? Math.round(h) + " h" : Math.round(h * 60) + " min");
 /** The estimate: what the integrations on the hub would cost the remote's battery if they ran on it. */
 function estimateHtml(est) {
@@ -1090,27 +1090,28 @@ function estimateHtml(est) {
   const bar = (v, max) => `<span class="mini" style="width:70px"><i style="width:${Math.max(0, Math.min(100, (v / (max || 1)) * 100))}%"></i></span>`;
   const max = Math.max(...est.integrations.map((x) => x.perDay.savedPct || 0), 0.0001);
   const rows = est.integrations.map((x) => `<tr>
-      <td><b>${esc(x.name)}</b><div class="sub2">${x.inputs.cpu ?? 0}% CPU here · ${x.inputs.deviceKBPerMin == null ? "device traffic not measured" : `${x.inputs.deviceKBPerMin} KB/min to devices`} · ${x.inputs.linkKBPerMin} KB/min over the link</div></td>
+      <td><b>${esc(x.name)}</b><div class="sub2">${x.inputs.cpu ?? 0}% CPU here · ${x.inputs.deviceKBPerMin == null ? "device traffic not measured" : `${x.inputs.deviceKBPerMin} KB/min to devices`} · ${x.inputs.linkKBPerMin} KB/min over the link${x.inputs.remoteApiKBPerMin ? ` · <b>${x.inputs.remoteApiKBPerMin} KB/min with the remote's own API</b> (stays inside the remote when it runs there, so on the hub it costs battery)` : ""}</div></td>
       <td class="num">${fmtPct(x.perDay.cpuPct)}</td><td class="num">${fmtPct(x.perDay.networkPct)}</td><td class="num">${x.perDay.linkPct > 0 ? "−" + fmtPct(x.perDay.linkPct) : "0%"}</td>
-      <td class="num"><b>${fmtPct(x.perDay.savedPct)}</b> ${bar(x.perDay.savedPct, max)}</td><td class="num">${x.memMB == null ? "—" : x.memMB + " MB"}</td></tr>`).join("");
+      <td class="num">${x.perDay.savedPct < 0 ? `<b class="bd">−${fmtPct(-x.perDay.savedPct)}</b>` : `<b>${fmtPct(x.perDay.savedPct)}</b>`} ${bar(x.perDay.savedPct, max)}</td><td class="num">${x.memMB == null ? "—" : x.memMB + " MB"}</td></tr>`).join("");
   const mem = est.memory;
   const field = (k, label, step, help) => `<label class="field" style="margin:0"><span class="sub2" style="margin:0">${label}</span><input class="inp" type="number" step="${step}" min="0" data-k="${k}" value="${m[k]}" title="${esc(help)}"></label>`;
   return `<div class="netsec" style="margin:0 0 10px;padding:0;border:0"><div class="nethead" style="margin-bottom:6px"><h4>Estimated saving</h4><span class="sub2" style="margin:0">what these integrations would cost the battery if they ran on the remote</span></div>
     <div class="netgrid">
-      <div class="stat"><div class="k">Saved per day</div><div class="v">${fmtPct(t.savedPctPerDay).replace("%", "<small>% battery</small>")}</div><div class="sub2">≈ ${Math.round((t.savedWhPerDay || 0) * 1000)} mWh a day</div></div>
+      <div class="stat"><div class="k">${t.savedPctPerDay < 0 ? "Costs per day" : "Saved per day"}</div><div class="v">${fmtPct(Math.abs(t.savedPctPerDay)).replace("%", "<small>% battery</small>")}</div><div class="sub2">≈ ${Math.round((t.savedWhPerDay || 0) * 1000)} mWh a day</div></div>
       <div class="stat"><div class="k">Longer per charge</div><div class="v">${t.extraHoursPerCharge != null ? fmtHours(t.extraHoursPerCharge) : "—"}</div><div class="sub2">${t.daysPerChargeNow ? `${t.daysPerChargeNow} days now, ${t.daysPerChargeOnRemote} if on the remote` : "needs a day of battery readings"}</div></div>
       <div class="stat"><div class="k">Memory freed on the remote</div><div class="v">${mem.freedMB}<small> MB</small></div><div class="sub2">${mem.remoteTotalMB ? `of ${mem.remoteTotalMB} MB; ${mem.remoteUsedMB} MB in use there now` : "RAM has no battery cost; it's room on the remote"}</div></div>
       <div class="stat"><div class="k">Pegasus Bridge on the remote</div><div class="v">${est.bridge.cpu != null ? est.bridge.cpu + "<small>% CPU</small>" : "—"}</div><div class="sub2">${est.bridge.cpu != null ? `costs ≈ ${fmtPct(est.bridge.pct)} a day (taken off)` : "measured after a few minutes"}</div></div>
     </div>
-    <div class="tablewrap" style="border:0;margin-top:6px;overflow-x:auto"><table class="rtable est"><thead><tr><th>Integration</th><th class="num">CPU</th><th class="num">Network</th><th class="num">Link now</th><th class="num">Saved / day</th><th class="num">Memory</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap" style="border:0;margin-top:6px;overflow-x:auto"><table class="rtable est"><thead><tr><th>Integration</th><th class="num">CPU</th><th class="num">Network</th><th class="num">Remote's Wi-Fi now</th><th class="num">Saved / day</th><th class="num">Memory</th></tr></thead><tbody>${rows}</tbody></table></div>
     <details style="margin-top:8px"><summary class="sub2" style="cursor:pointer">How this is estimated, and the assumptions</summary>
-      <p class="sub2">For each integration: its processor time on this hub, times how much slower the remote's processor is, times the power of a busy remote core; plus the Wi-Fi energy for the traffic to its devices (bytes and sends); minus the Wi-Fi energy the remote now spends on the link to the hub for it. Counted for the ${Math.round(est.awakeShare * 24)} h a day the remote is awake${est.awakeShareMeasured ? " (from its battery readings)" : " (assumed until there are a few days of readings)"}. Device traffic is counted from each integration's TCP connections; short connections and UDP (discovery) can be missed, so that part is a lower bound.${est.networkMeasured ? "" : " (This hub can't list connections, so device traffic isn't counted.)"} The measured before/after figures below are the check on these numbers.</p>
+      <p class="sub2">For each integration: its processor time on this hub, times how much slower the remote's processor is, times the power of a busy remote core; plus the Wi-Fi energy for the traffic to its devices (bytes and sends); minus the Wi-Fi energy the remote now spends for it: the link to the hub, and any traffic with the remote's own API (Remote Self-Control and similar talk to the remote itself; on the remote that stays inside it, on the hub it crosses its Wi-Fi). Counted for the ${Math.round(est.awakeShare * 24)} h a day the remote is awake${est.awakeShareMeasured ? " (from its battery readings)" : " (assumed: the readings don't show it asleep yet)"}. Device traffic is counted from each integration's TCP connections; short connections and UDP (discovery) can be missed, so that part is a lower bound.${est.networkMeasured ? "" : " (This hub can't list connections, so device traffic isn't counted.)"} The measured before/after figures below are the check on these numbers.</p>
       <form id="bmodel" class="netgrid" style="align-items:end">
         ${field("batteryWh", "Battery (Wh)", "0.1", "Remote 3: 2400 mAh × 3.7 V ≈ 8.9 Wh")}
         ${field("cpuSlowdown", "Remote CPU slower by (×)", "0.5", "How many times longer the remote takes for the same work than one core here")}
         ${field("cpuWattsPerCore", "Busy remote core (W)", "0.05", "Extra power of one fully busy core on the remote")}
         ${field("wifiJoulesPerMB", "Wi-Fi per MB (J)", "0.05", "Energy to move one megabyte over Wi-Fi")}
         ${field("wifiJoulesPerSend", "Wi-Fi per packet (J)", "0.005", "Radio wake-up and tail per packet, averaged")}
+        ${field("wifiActiveWatts", "Wi-Fi fully busy (W)", "0.05", "Most the radio can draw; heavy traffic can't cost more than this")}
         ${field("awakeShareDefault", "Awake share if unmeasured", "0.05", "Share of the day the remote is awake, used until there are battery readings")}
         <div style="display:flex;gap:6px"><button class="btn primary small" type="submit">Save</button><button class="btn small" type="button" id="bmodelReset">Defaults</button></div>
       </form></details></div>`;

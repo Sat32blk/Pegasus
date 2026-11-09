@@ -20,7 +20,7 @@ try {
     const m = { ...defaultModel("x64"), awakeShareDefault: 0.5 };
     const e = estimateSavings(
       [{ id: "a", name: "A", cpu: 1, memMB: 50, netBytesPerSec: 1000, sendsPerSec: 1, linkBytesPerSec: 100, linkMsgsPerSec: 0.1 }],
-      { awakeShare: null, drainPerDay: 20 },
+      { awakeShare: 0.5, drainPerDay: 20 },
       { cpu: 0.2 },
       m
     );
@@ -41,6 +41,25 @@ try {
     console.log(`  ${e.total.savedPctPerDay}% a day, +${e.total.extraHoursPerCharge} h per charge`);
   }
 
+  step("traffic with the remote's own API is a cost on the hub (Remote Self-Control), not a saving");
+  {
+    const m = { ...defaultModel("x64"), awakeShareDefault: 0.5 };
+    const base = { id: "sc", name: "Self-Control", cpu: 0, netBytesPerSec: 0, sendsPerSec: 0, linkBytesPerSec: 0, linkMsgsPerSec: 0 };
+    const e = estimateSavings([{ ...base, remoteApiBytesPerSec: 60000, remoteApiPacketsPerSec: 50 }], {}, null, m);
+    assert.ok(e.integrations[0].perDay.savedPct < 0, "talking to the remote from the hub must cost battery");
+    assert.equal(e.integrations[0].perDay.networkJ, 0);
+    console.log(`  ${e.integrations[0].perDay.savedPct}% a day (a cost)`);
+  }
+
+  step("a remote never seen asleep: the assumed awake time is used, and no time per charge is claimed");
+  {
+    const e = estimateSavings([{ id: "a", name: "A", cpu: 1, netBytesPerSec: 0, sendsPerSec: 0 }], { awakeShare: 1, drainPerDay: 300 }, null, defaultModel("x64"));
+    assert.equal(e.awakeShareMeasured, false);
+    assert.equal(e.awakeShare, defaultModel().awakeShareDefault);
+    assert.equal(e.total.daysPerChargeNow, null);
+    console.log("  ok");
+  }
+
   step("assumptions can be changed, and bad values fall back to the defaults");
   {
     const m = mergeModel({ cpuSlowdown: 3, batteryWh: -1, wifiJoulesPerMB: "x" }, "arm64");
@@ -58,8 +77,8 @@ try {
         "ESTAB 0 0 [::ffff:192.0.2.2]:40000 [::ffff:192.0.2.9]:8001 timer:(keepalive,1sec,0) ino:43 sk:1 bytes_sent:100 bytes_acked:101 bytes_received:50 data_segs_out:3 data_segs_in:4\n"
     );
     assert.deepEqual(out, [
-      { ino: "42", local: true, bytes: 15, packets: 3 },
-      { ino: "43", local: false, bytes: 150, packets: 7 }
+      { ino: "42", local: true, peerIp: "127.0.0.1", bytes: 15, packets: 3 },
+      { ino: "43", local: false, peerIp: "192.0.2.9", bytes: 150, packets: 7 }
     ]);
     console.log("  ok");
   }

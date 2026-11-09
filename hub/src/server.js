@@ -74,7 +74,7 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
 
   registerMoveHandlers({ link, store, sup, mgr, log: say, sources: moveSources });
   const webPages = new WebPages({ sup, store });
-  const netUsage = new NetUsage({ sup, store });
+  const netUsage = new NetUsage({ sup, store, remoteAddresses: () => (link ? link.status().map((r) => r.address).filter(Boolean) : []) });
   const writeInfo = () => {
     try {
       writeJson(infoFile, hubInfo());
@@ -181,6 +181,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         memMB: sup.usage(m.id)?.memMB ?? null,
         netBytesPerSec: dev ? dev.bytesPerSec : null,
         sendsPerSec: dev ? dev.packetsPerSec : null,
+        remoteApiBytesPerSec: dev ? dev.remoteBytesPerSec : 0,
+        remoteApiPacketsPerSec: dev ? dev.remotePacketsPerSec : 0,
         linkBytesPerSec: n ? (n.totals.bytesIn + n.totals.bytesOut) / nSec : 0,
         linkMsgsPerSec: n ? Math.max(0, n.totals.msgsIn + n.totals.msgsOut - shaped) / nSec : 0
       };

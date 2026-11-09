@@ -19,6 +19,7 @@ export function defaultModel(arch = process.arch) {
     cpuWattsPerCore: 0.35, // extra power of one busy A55-class core at full clock
     wifiJoulesPerMB: 0.3, // Wi-Fi 5 transfer energy per megabyte
     wifiJoulesPerSend: 0.01, // radio wake-up and tail per packet, averaged over packets sent together
+    wifiActiveWatts: 0.6, // the radio fully busy: no traffic can cost more than this
     awakeShareDefault: 0.3, // share of the day the remote is awake, until there are battery readings
     countWhileAsleep: false // integrations on a sleeping remote do little; don't count those hours
   };
@@ -37,13 +38,18 @@ export function mergeModel(saved = {}, arch) {
 /**
  * integrations: [{ id, name, cpu (avg % of one hub core), memMB, netBytesPerSec and sendsPerSec
  *                  (TCP traffic to its devices: bytes, packets; null when not measured),
- *                  linkBytesPerSec, linkMsgsPerSec (its traffic over the link to the remote now) }]
+ *                  linkBytesPerSec, linkMsgsPerSec (its traffic over the link to the remote now),
+ *                  remoteApiBytesPerSec, remoteApiPacketsPerSec (its own traffic with the remote's
+ *                  API: inside the remote if it ran there, over the remote's Wi-Fi now) }]
  * remote: { awakeShare (0..1 or null), memTotalMB, memUsedMB, drainPerDay (% or null) }
  * bridge: { cpu (% of one remote core) } or null
  * Returns per-integration and total joules and % of battery per day.
  */
 export function estimateSavings(integrations, remote = {}, bridge = null, model = defaultModel()) {
-  const awake = remote.awakeShare != null ? remote.awakeShare : model.awakeShareDefault;
+  // a remote that never once registered as asleep: its sleep isn't being recorded (or it sat in
+  // the dock), so the measured share would count the whole day; use the assumption instead
+  const measured = remote.awakeShare != null && remote.awakeShare < 0.95;
+  const awake = measured ? remote.awakeShare : model.awakeShareDefault;
   const share = model.countWhileAsleep ? 1 : awake;
   const day = 86400 * share; // seconds a day the work would happen on the remote
   const capJ = model.batteryWh * 3600;
@@ -52,8 +58,13 @@ export function estimateSavings(integrations, remote = {}, bridge = null, model 
     const cpuJ = ((i.cpu || 0) / 100) * model.cpuSlowdown * model.cpuWattsPerCore * day;
     const devBytes = (i.netBytesPerSec || 0) * day;
     const devSends = (i.sendsPerSec || 0) * day;
-    const netJ = (devBytes / 1e6) * model.wifiJoulesPerMB + devSends * model.wifiJoulesPerSend;
-    const linkJ = (((i.linkBytesPerSec || 0) * day) / 1e6) * model.wifiJoulesPerMB + (i.linkMsgsPerSec || 0) * day * model.wifiJoulesPerSend;
+    const radioMax = model.wifiActiveWatts * day; // a radio that never rests
+    const netJ = Math.min(radioMax, (devBytes / 1e6) * model.wifiJoulesPerMB + devSends * model.wifiJoulesPerSend);
+    const linkJ = Math.min(
+      radioMax,
+      ((((i.linkBytesPerSec || 0) + (i.remoteApiBytesPerSec || 0)) * day) / 1e6) * model.wifiJoulesPerMB +
+        ((i.linkMsgsPerSec || 0) + (i.remoteApiPacketsPerSec || 0)) * day * model.wifiJoulesPerSend
+    );
     const savedJ = cpuJ + netJ - linkJ;
     return {
       id: i.id,
@@ -69,7 +80,7 @@ export function estimateSavings(integrations, remote = {}, bridge = null, model 
         networkPct: r(pct(netJ), 2),
         linkPct: r(pct(linkJ), 2)
       },
-      inputs: { cpu: r(i.cpu, 2), deviceKBPerMin: i.netBytesPerSec == null ? null : r(((i.netBytesPerSec || 0) * 60) / 1024, 1), packetsPerMin: i.sendsPerSec == null ? null : r((i.sendsPerSec || 0) * 60, 1), linkKBPerMin: r(((i.linkBytesPerSec || 0) * 60) / 1024, 1), linkMsgsPerMin: r((i.linkMsgsPerSec || 0) * 60, 1) }
+      inputs: { cpu: r(i.cpu, 2), deviceKBPerMin: i.netBytesPerSec == null ? null : r(((i.netBytesPerSec || 0) * 60) / 1024, 1), packetsPerMin: i.sendsPerSec == null ? null : r((i.sendsPerSec || 0) * 60, 1), linkKBPerMin: r(((i.linkBytesPerSec || 0) * 60) / 1024, 1), linkMsgsPerMin: r((i.linkMsgsPerSec || 0) * 60, 1), remoteApiKBPerMin: r(((i.remoteApiBytesPerSec || 0) * 60) / 1024, 1) }
     };
   });
   // the Bridge itself runs on the remote for all of them
@@ -77,11 +88,13 @@ export function estimateSavings(integrations, remote = {}, bridge = null, model 
   const savedJ = rows.reduce((a, x) => a + x.perDay.savedJ, 0) - bridgeJ;
   const savedPct = pct(savedJ);
   const memMB = rows.reduce((a, x) => a + (x.memMB || 0), 0);
-  const drain = remote.drainPerDay; // measured % per day now (with the integrations on the hub)
+  // measured % per day now (with the integrations on the hub); only with sleep in the readings,
+  // else it's the drain of a remote that was awake (or never seen asleep) the whole time
+  const drain = measured ? remote.drainPerDay : null;
   return {
     model,
     awakeShare: r(awake, 2),
-    awakeShareMeasured: remote.awakeShare != null,
+    awakeShareMeasured: measured,
     integrations: rows.sort((a, b) => b.perDay.savedJ - a.perDay.savedJ),
     bridge: { joulesPerDay: r(bridgeJ, 0), pct: r(pct(bridgeJ), 2), cpu: bridge?.cpu ?? null },
     total: {
