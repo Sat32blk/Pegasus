@@ -3,14 +3,14 @@
 # <DOCKERHUB_USERNAME>/pegasus-hub once the repository variable DOCKERHUB_USERNAME and
 # the secret DOCKERHUB_TOKEN are set (Settings > Secrets and variables > Actions).
 #   - every push to the main branch updates the :latest tag
-#   - pushing a tag like v0.9.0 also publishes :0.9.0 and :0.9 (hub versions; the Bridge has its
-#     own releases, tagged bridge-v…, see bridge-release.yml)
+#   - pushing a tag like hub-v0.9.0 also publishes :0.9.0 and :0.9 (the plain v… tags and the
+#     GitHub releases belong to the Bridge, see bridge-release.yml)
 name: Docker image
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["hub-v*"]
   workflow_dispatch:
 
 permissions:
@@ -69,8 +69,8 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.ver.outputs.pkg }},enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=hub-v(\d+\.\d+\.\d+),group=1
+            type=match,pattern=hub-v(\d+\.\d+)\.\d+,group=1
 
       - uses: docker/build-push-action@v7
         with:

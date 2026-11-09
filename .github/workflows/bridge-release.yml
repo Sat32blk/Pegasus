@@ -1,7 +1,8 @@
-# Pegasus Bridge releases. Publish a release on GitHub with a tag like bridge-v0.4.1 (Releases →
-# Draft a new release → choose a tag → type bridge-v<version> → Create new tag → Publish); this
+# Pegasus Bridge releases. Publish a release on GitHub with a tag like v0.4.6 (Releases →
+# Draft a new release → choose a tag → type v<version> → Create new tag → Publish); this
 # builds uc-intg-pegasus-bridge-<version>.tar.gz from that tag and attaches it to the release.
-# The tag's version must match bridge/src/driver.json.
+# The tag's version must match bridge/src/driver.json. Plain v<version> tags are what Integration
+# Manager reads for updates (older releases were tagged bridge-v<version>, still accepted).
 name: Bridge release
 
 on:
@@ -13,7 +14,7 @@ permissions:
 
 jobs:
   bridge:
-    if: startsWith(github.event.release.tag_name, 'bridge-v')
+    if: startsWith(github.event.release.tag_name, 'v') || startsWith(github.event.release.tag_name, 'bridge-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -24,7 +25,7 @@ jobs:
           node-version: 22
       - name: Tag and driver.json agree
         run: |
-          want="${{ github.event.release.tag_name }}"; want="${want#bridge-v}"
+          want="${{ github.event.release.tag_name }}"; want="${want#bridge-}"; want="${want#v}"
           have=$(node -p "require('./bridge/src/driver.json').version")
           echo "tag $want, driver.json $have"
           [ "$want" = "$have" ] || { echo "::error::the tag says $want but bridge/src/driver.json says $have"; exit 1; }

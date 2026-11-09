@@ -12,11 +12,11 @@ Nothing goes to GitHub until the owner says push.
 
 ## Releasing the Bridge
 
-The Bridge has its own releases, tagged `bridge-v<version>`, so its numbers never mix with the hub's.
+The repository's GitHub releases are the Bridge's, tagged `v<version>` (Integration Manager reads these for updates; the first ones were tagged `bridge-v<version>`). Hub image versions use `hub-v<version>` tags, so the two never mix.
 
 1. Bump the version in `bridge/src/driver.json` (and its `release_date`), `bridge/package.json` and `bridge/src/bin/package.json`. At most 20 characters.
 2. `npm test`, commit and push.
-3. On GitHub: **Releases → Draft a new release → Choose a tag**, type `bridge-v<version>` (e.g. `bridge-v0.4.1`) and **Create new tag on publish**. Title it `Pegasus Bridge <version>`, list what changed, and **Publish release**.
+3. On GitHub: **Releases → Draft a new release → Choose a tag**, type `v<version>` (e.g. `v0.4.6`) and **Create new tag on publish**. Title it `Pegasus Bridge <version>`, list what changed, and **Publish release**.
 4. `.github/workflows/bridge-release.yml` checks the tag matches `driver.json`, runs the tests, builds `uc-intg-pegasus-bridge-<version>.tar.gz` and attaches it to the release (a minute or two). That file is what people upload to the remote.
 
 ## Releasing the hub
@@ -25,7 +25,7 @@ Every push to `main` already publishes `:latest` and `:<hub version>`. For a nam
 
 1. Bump the version in `hub/package.json` and `package.json`.
 2. `npm test`, commit and push.
-3. `git tag v<version> && git push origin v<version>` (also publishes `:<major>.<minor>`), and optionally a GitHub release for it with the changes.
+3. `git tag hub-v<version> && git push origin hub-v<version>` (also publishes `:<major>.<minor>`). Don't make a GitHub release for it: the releases are the Bridge's.
 
 ## Building the hub without GitHub (e.g. straight on the server)
 
