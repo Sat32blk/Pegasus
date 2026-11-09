@@ -777,6 +777,7 @@ function openWin({ kind, title, icon = "", size = "", tabs = null, tab = null, b
   $("#win").className = "win " + size;
   $("#winTitle").textContent = title;
   $("#winIcon").innerHTML = icon;
+  $("#winTabs").onclick = null; // each window sets its own tab handler (one left over from another window did the wrong thing)
   $("#winTabs").innerHTML = tabs ? `<div class="tabs" role="tablist">${tabs.map(([id, l]) => `<button role="tab" data-tab="${id}" class="${id === tab ? "on" : ""}" aria-selected="${id === tab}">${l}</button>`).join("")}</div>` : "";
   $("#winBody").innerHTML = body;
   $("#winFoot").innerHTML = foot;
@@ -850,6 +851,7 @@ function showAdd(tab) {
     : `<label class="drop" id="drop"><input type="file" id="archive" accept=".gz,.tgz" hidden><div style="font-size:28px">⬆</div><b>Drop a .tar.gz here</b> or choose a file<div class="sub2" id="dropName">The same archive you would upload to the remote.</div></label>
        <div class="banner warn" style="margin:14px 0 0"><span>⚠</span><span>Archives with a program built only for the remote's processor (aarch64) can't run on this server${st ? ` (${esc(st.arch)})` : ""}. Install from the GitHub source instead.</span></div>`,
     foot: `<span class="left">It appears on every linked remote by itself.</span><button class="btn" data-close>Cancel</button><button class="btn primary" id="doInstall">Install</button>` });
+  $("#winTabs").onclick = (e) => { const b = e.target.closest("[data-tab]"); if (b && b.dataset.tab !== tab) showAdd(b.dataset.tab); };
   if (tab === "git") setTimeout(() => $("#gitUrl").focus(), 0);
   else {
     const drop = $("#drop"), inp = $("#archive");
