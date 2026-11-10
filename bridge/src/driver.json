@@ -1,6 +1,6 @@
 {
   "driver_id": "pegasus_bridge",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "icon": "uc:integration",
   "min_core_api": "0.20.0",
   "name": { "en": "Pegasus Bridge" },
@@ -17,6 +17,6 @@
       { "id": "remove", "label": { "en": "Remove integrations from this remote when they are removed on the hub" }, "field": { "checkbox": { "value": true } } }
     ]
   },
-  "release_date": "2026-11-04",
+  "release_date": "2026-11-10",
   "home_page": "https://github.com/Sat32blk/Pegasus"
 }

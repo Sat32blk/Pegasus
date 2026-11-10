@@ -23,7 +23,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { createTarGz } from "./tar.js";
-import { RemoteOps, leaveOut } from "./remote.js";
+import { RemoteOps, leaveOut, entityIdsOf } from "./remote.js";
 
 /** Integrations that must stay on the remote (they control the remote itself). */
 export const STAYS = new Set(["pegasus_bridge", "pegasis_bridge"]); // the Bridge itself (pegasis_bridge: before the rename); everything else talks to the remote over its API
@@ -293,6 +293,30 @@ export class Mover {
     }
     if (newId !== snap.instanceId) this.#step(driverId, "instance", `the remote named the instance ${newId} (was ${snap.instanceId}); references are rewritten`);
     mv.newInstanceId = newId;
+    // every entity the saved places use must exist on the remote now, or the remote refuses to
+    // put it back ("Invalid entity_id"). Ones the integration doesn't offer are left out; ones it
+    // offers but that didn't get selected stop the move with "continue without them" offered.
+    const absent = [];
+    for (const own of entityIdsOf(snap)) if (!(await remote.getOrNull(`/entities/${encodeURIComponent(newId + "." + own)}`))) absent.push(own);
+    if (absent.length) {
+      const offered = await remote.offeredIds(newId).catch(() => null);
+      const gone = offered ? absent.filter((x) => !offered.has(x)) : [];
+      const pending = absent.filter((x) => !gone.includes(x));
+      if (gone.length) {
+        snap = leaveOut(snap, gone, "not offered by the integration");
+        mv.snapshotFile = this.#saveSnapshot(driverId, snap);
+        this.#step(driverId, "instance", `left out ${gone.join(", ")}: the integration doesn't offer ${gone.length === 1 ? "it" : "them"} (left over from an earlier version or setup?)`);
+      }
+      if (pending.length) {
+        await remote.configureEntities(newId, newId, pending, { tries: 10 }).catch(() => {});
+        const still = [];
+        for (const own of pending) if (!(await remote.getOrNull(`/entities/${encodeURIComponent(newId + "." + own)}`))) still.push(own);
+        if (still.length) {
+          mv.missing = still;
+          throw new Error(`could not select ${still.length} of ${entityIdsOf(snap).length} entities (${still.join(", ")}): the remote has no such entity, so it would refuse to put ${still.length === 1 ? "it" : "them"} back into activities`);
+        }
+      }
+    }
     this.#step(driverId, "restore", "putting the saved references back");
     const done = await remote.restore(snap, newId);
     this.#step(driverId, "restore", `${done.length} change(s) written`);

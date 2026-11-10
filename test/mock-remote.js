@@ -33,7 +33,7 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
   const offers = new Map(); // driver id -> entity ids its driver offers (as the core would load them)
   // entities a driver does not offer (even while selected): "always" = left over from an older
   // version; "external" = only while it runs on the hub (e.g. a device the hub can't reach)
-  const notOffered = { always: new Set(), external: new Set() };
+  const notOffered = { always: new Set(), external: new Set(), noEntity: new Set() };
   const offerFilter = (inst) => (e) => !notOffered.always.has(e) && !(drivers.get(inst.driver_id)?.type === "EXTERNAL" && notOffered.external.has(e));
   const instances = new Map(); // integration_id -> { integration_id, driver_id, name, icon, configured: [] }
   const entities = new Map(); // entity_id -> { entity_id, integration_id, name, icon, entity_type }
@@ -239,6 +239,7 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
             if (typeof e !== "string" || !offered.includes(e)) continue;
             if (!inst.configured.includes(e)) inst.configured.push(e);
             const full = `${inst.integration_id}.${e}`;
+            if (notOffered.noEntity.has(e)) continue; // selected, but the remote makes no entity for it
             if (!entities.has(full)) entities.set(full, { entity_id: full, integration_id: inst.integration_id, name: { en: e }, entity_type: "switch" });
           }
           return send(200, []);

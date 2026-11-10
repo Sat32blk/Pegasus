@@ -320,6 +320,26 @@ try {
     assert.ok(remote.instances.get("sim_node.main").configured.includes("sim_switch"), "an entity not in the failed list must not be dropped");
     assert.ok(mentions("sim_switch"));
     console.log("  continued without slider_tv_volume; only entities that failed can be left out");
+
+    step("an entity that's selected but has no entity on the remote stops before the restore, with \"continue without it\"");
+    await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    remote.notOffered.external.clear();
+    addGhost("media_player.10.0.0.180");
+    remote.notOffered.noEntity.add("media_player.10.0.0.180");
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    const m4 = await waitMove("sim_node");
+    assert.equal(m4.status, "failed");
+    assert.notEqual(m4.step, "restore", "it must stop before writing references back");
+    assert.deepEqual(m4.missing, ["media_player.10.0.0.180"]);
+    console.log(`  stopped: ${m4.error}`);
+    await hub.link.call("test-remote", "move.retry", { driverId: "sim_node", leaveOut: ["media_player.10.0.0.180"] }, 10000);
+    const m5 = await waitMove("sim_node");
+    assert.equal(m5.status, "done", m5.error);
+    assert.equal(mentions("media_player.10.0.0.180"), false);
+    assert.ok(mentions("sim_switch"));
+    remote.notOffered.noEntity.clear();
+    console.log("  continued without it; the rest restored");
     remote.notOffered.always.clear();
     remote.notOffered.external.clear();
   }

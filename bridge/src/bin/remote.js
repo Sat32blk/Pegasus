@@ -142,6 +142,13 @@ export class RemoteOps {
    * rewritten from the old ID to the new one first. Only the parts that refer to the integration
    * are written. Returns a list of what was done.
    */
+  /** The integration's own IDs of the entities an instance offers now (reloaded from it). */
+  async offeredIds(instanceId) {
+    const prefix = instanceId + ".";
+    const list = await this.all(`/intg/instances/${enc(instanceId)}/entities?filter=ALL&reload=true`);
+    return new Set(list.map((e) => String(e.entity_id || "")).map((x) => (x.startsWith(prefix) ? x.slice(prefix.length) : x)));
+  }
+
   async restore(snapshot, newInstanceId = snapshot.instanceId) {
     const oldP = snapshot.instanceId + ".";
     const newP = newInstanceId + ".";
