@@ -23,7 +23,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { createTarGz } from "./tar.js";
-import { RemoteOps, leaveOut, entityIdsOf } from "./remote.js";
+import { RemoteOps, leaveOut, entityIdsOf, foreignIdsOf } from "./remote.js";
 
 /** Integrations that must stay on the remote (they control the remote itself). */
 export const STAYS = new Set(["pegasus_bridge", "pegasis_bridge"]); // the Bridge itself (pegasis_bridge: before the rename); everything else talks to the remote over its API
@@ -285,6 +285,7 @@ export class Mover {
       throw e;
     }
     delete mv.missing;
+    delete mv.missingForeign;
     const newId = made.id;
     if (made.skipped.length) {
       snap = leaveOut(snap, made.skipped, "not offered by the integration before the move either");
@@ -317,6 +318,25 @@ export class Mover {
         }
       }
     }
+    // the places are written back whole, so other integrations' entities in them must exist too
+    const dead = [];
+    const unknown = [];
+    for (const id of foreignIdsOf(snap)) {
+      if (await remote.getOrNull(`/entities/${encodeURIComponent(id)}`)) continue;
+      const inst = id.split(".").slice(0, 2).join(".");
+      if (await remote.getOrNull(`/intg/instances/${encodeURIComponent(inst)}`)) unknown.push(id);
+      else dead.push(id);
+    }
+    if (dead.length) {
+      snap = leaveOut(snap, dead, "its integration is no longer on the remote", { foreign: true });
+      mv.snapshotFile = this.#saveSnapshot(driverId, snap);
+      this.#step(driverId, "restore", `left out ${dead.join(", ")}: ${dead.length === 1 ? "it belongs" : "they belong"} to an integration that is no longer on the remote, so ${dead.length === 1 ? "that step" : "those steps"} couldn't run anyway and the remote won't save an activity that still has ${dead.length === 1 ? "it" : "them"}`);
+    }
+    if (unknown.length) {
+      mv.missing = unknown;
+      mv.missingForeign = unknown;
+      throw new Error(`could not select ${unknown.length} of ${unknown.length} entities (${unknown.join(", ")}): they belong to other integrations, which don't offer them now (is that device on and its integration connected?); the remote refuses activities that use missing entities`);
+    }
     this.#step(driverId, "restore", "putting the saved references back");
     const done = await remote.restore(snap, newId);
     this.#step(driverId, "restore", `${done.length} change(s) written`);
@@ -334,7 +354,11 @@ export class Mover {
     // "continue without them": the entities that couldn't be selected are left out of what is put back
     drop = (Array.isArray(drop) ? drop : []).map(String).filter((x) => missingOf(mv).includes(x));
     if (snap && drop.length) {
-      snap = leaveOut(snap, drop, "left out at the owner's request (the integration didn't offer them)");
+      const foreign = drop.filter((x) => (mv.missingForeign || []).includes(x));
+      const own = drop.filter((x) => !foreign.includes(x));
+      if (own.length) snap = leaveOut(snap, own, "left out at the owner's request (the integration didn't offer them)");
+      if (foreign.length) snap = leaveOut(snap, foreign, "left out at the owner's request (another integration didn't offer them)", { foreign: true });
+      delete mv.missingForeign;
       mv.snapshotFile = this.#saveSnapshot(driverId, snap);
       mv.log.push(`${new Date().toISOString().slice(11, 19)} continuing without ${drop.join(", ")}`);
       delete mv.missing;

@@ -342,6 +342,39 @@ try {
     console.log("  continued without it; the rest restored");
     remote.notOffered.always.clear();
     remote.notOffered.external.clear();
+
+    // the activity also has a step for ANOTHER integration that was removed since (Kodi): the
+    // remote refuses to save the activity with it, so it's left out; other.main.tv stays
+    await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    const KODI = "kodi_driver.main.media_player.livingroom";
+    remote.activities.get("act1").options.sequences.off.push({ type: "command", command: { entity_id: KODI, cmd_id: "media_player.off" } });
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    const m6 = await waitMove("sim_node");
+    assert.equal(m6.status, "done", m6.error);
+    assert.ok(m6.log.some((l) => l.includes("left out " + KODI)), "the dead step was not reported");
+    const act = JSON.stringify(remote.activities.get("act1"));
+    assert.ok(!act.includes(KODI) && act.includes("other.main.tv") && mentions("sim_switch"));
+    console.log("  a step for a removed integration (Kodi) left out; the other integration's steps kept");
+
+    // an entity of another integration that IS set up but has no such entity now: stop and ask
+    await hub.link.call("test-remote", "move.toRemote", { driverId: "sim_node" }, 10000);
+    assert.equal((await waitMove("sim_node")).status, "done");
+    remote.entities.delete("other.main.tv");
+    remote.instances.set("other.main", { integration_id: "other.main", driver_id: "other", name: { en: "Other" }, enabled: true, device_state: "CONNECTED", configured: ["tv"] });
+    await hub.link.call("test-remote", "move.toHub", { driverId: "sim_node" }, 10000);
+    const m7 = await waitMove("sim_node");
+    {
+      assert.equal(m7.status, "failed");
+      assert.deepEqual(m7.missing, ["other.main.tv"]);
+      await hub.link.call("test-remote", "move.retry", { driverId: "sim_node", leaveOut: ["other.main.tv"] }, 10000);
+      const m8 = await waitMove("sim_node");
+      assert.equal(m8.status, "done", m8.error);
+      // left out of what was written back (the sequences); places not written stay as they were
+      assert.ok(!JSON.stringify(remote.activities.get("act1").options.sequences).includes("other.main.tv") && mentions("sim_switch"));
+      console.log("  a missing entity of a set-up integration: stopped, then continued without it");
+    }
+    remote.instances.delete("other.main");
   }
 
   step("the Bridge itself can't move; Remote Self-Control can");

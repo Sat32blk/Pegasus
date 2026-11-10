@@ -722,10 +722,15 @@ async function loadRemote(name, force, every = 60000) {
   renderRemotes();
 }
 /** A move's error in plain words; the raw message goes under "Details". */
-function friendlyMoveError(err) {
+function friendlyMoveError(err, driverId) {
   const e = String(err || "");
   let m;
-  if ((m = /Invalid entity_id '([^']+)'/.exec(e) || /unknown entity (\S+)/.exec(e))) return `The remote refused to put <b>${esc(m[1].split(".").slice(2).join(".") || m[1])}</b> back into an activity, because that entity isn't selected on the remote yet.`;
+  if ((m = /Invalid entity_id '([^']+)'/.exec(e) || /unknown entity (\S+)/.exec(e))) {
+    const [drv, , ...rest] = m[1].split(".");
+    if (driverId && drv !== driverId) return `The remote won't save an activity that has a step for <b>${esc(m[1])}</b>: that entity belongs to another integration (<b>${esc(drv)}</b>) and no longer exists on the remote. Update the Bridge to 0.4.7 or newer and Retry: it leaves out steps for integrations that are gone. Or remove that step from the activity and Retry.`;
+    return `The remote refused to put <b>${esc(rest.join(".") || m[1])}</b> back into an activity, because that entity isn't selected on the remote yet.`;
+  }
+  if ((m = /could not select \d+ of \d+ entities \(([^)]*)\): they belong to other integrations/.exec(e))) return `The activity also uses <b>${esc(m[1])}</b> from another integration, and the remote doesn't have ${m[1].includes(",") ? "those entities" : "that entity"} right now. If that device is off or its integration disconnected, fix that and Retry; if it's gone for good, continue without it.`;
   if ((m = /could not select (\d+) of (\d+) entities \(([^)]*)\):\s*(.*)$/s.exec(e))) return `Couldn't select ${m[1]} of its ${m[2]} entities on the remote (<b>${esc(m[3])}</b>): ${/does not offer/.test(m[4]) ? "the integration on the hub doesn't offer them. If they belong to a device that is off, turn it on and Retry; if they were removed from the integration, continue without them." : esc(m[4])}`;
   if (/Integration is not active/i.test(e)) return "The integration wasn't running at that moment, so the remote couldn't list its entities.";
   if (/no answer within|timed? ?out/i.test(e)) return "The remote or the hub didn't answer in time.";
@@ -748,7 +753,7 @@ function pageUrl(pg) {
 function moveBox(mv, i, remote) {
   const where = mv.dir === "toHub" ? "to the hub" : "back to the remote";
   if (mv.status === "failed") return `<div class="mv failed"><span class="status st-failed">Move ${where} stopped</span> <span class="sub2" style="display:inline">while ${esc(STEP[mv.step] || mv.step)}</span>
-      <p class="what">${friendlyMoveError(mv.error)}</p>
+      <p class="what">${friendlyMoveError(mv.error, i.driver_id)}</p>
       <div class="acts"><button class="btn primary small" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(remote)}">Retry</button>${mv.missing?.length ? ` <button class="btn small" data-mv-retry="${esc(i.driver_id)}" data-leave-out="${esc(mv.missing.join(","))}" data-remote="${esc(remote)}">Continue without ${mv.missing.length === 1 ? "it" : "them"}</button>` : ""}<span class="sub2" style="margin:0">${mv.missing?.length ? `Retry waits for ${esc(mv.missing.join(", "))} again. <b>Continue without</b> finishes the move and takes ${mv.missing.length === 1 ? "that entity" : "those entities"} out of activities and pages (the integration doesn't offer ${mv.missing.length === 1 ? "it" : "them"}, so ${mv.missing.length === 1 ? "it" : "they"} can't work anyway).` : "Retry continues from where it stopped. What was saved is kept."}</span></div>
       <details class="mvd" data-mvd="${esc(remote + "|" + i.driver_id)}" ${openMoveDetails.has(remote + "|" + i.driver_id) ? "open" : ""}><summary>Details</summary><div class="acts" style="margin:6px 0"><button class="btn small" data-copy="${esc(`${i.name} ${i.version || ""}: move ${where} stopped while ${STEP[mv.step] || mv.step}\n\n${mv.error || ""}\n\n${mv.log.join("\n")}`)}" data-what="the error and move log">Copy</button></div><pre>${esc(mv.error || "")}\n\n${esc(mv.log.slice(-8).join("\n"))}</pre></details></div>`;
   return `<div class="mv"><span class="status st-${mv.status === "done" ? "done" : "moving"}">${mv.status === "done" ? "Moved " + where : "Moving " + where}</span>${mv.status !== "done" ? ` <span class="sub2" style="display:inline">${esc(STEP[mv.step] || mv.step)}</span>` : ""}<pre>${esc(mv.log.slice(-5).join("\n"))}</pre></div>`;

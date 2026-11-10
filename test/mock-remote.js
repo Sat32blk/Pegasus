@@ -268,6 +268,8 @@ export async function startMockRemote({ apiKey = "test-key", log = () => {} } = 
             for (const e of o.entity_ids) if (!entities.has(e) && !e.startsWith("other.")) return send(400, { message: `unknown entity ${e}` });
             a.options.included_entities = o.entity_ids.map((entity_id) => ({ entity_id }));
           }
+          // like the real remote: every step of a sequence written must name an existing entity
+          for (const k of ["on", "off"]) for (const st of o.sequences?.[k] || []) if (st.type === "command" && st.command?.entity_id && !entities.has(st.command.entity_id)) return send(400, { message: `Invalid entity_id '${st.command.entity_id}' for command '${st.command.cmd_id}' in sequence.` });
           for (const k of ["sequences", "touch_slider", "voice_assistant"]) if (o[k]) a.options[k] = o[k];
           return send(200, a);
         }

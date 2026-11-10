@@ -324,14 +324,37 @@ export function entityIdsOf(snap) {
 }
 
 /**
+ * Entities of OTHER integrations (and the remote's own) that the saved places refer to: an
+ * activity is written back whole, so the remote checks these too and refuses the lot if one of
+ * them no longer exists (a sequence step for an integration that was removed since).
+ */
+export function foreignIdsOf(snap) {
+  const prefix = snap.instanceId + ".";
+  const ids = new Set();
+  const walk = (o, key) => {
+    if (typeof o === "string") {
+      if ((key === "entity_id" || key === "entities" || key === "entity_ids") && !o.startsWith(prefix)) ids.add(o);
+      return;
+    }
+    if (Array.isArray(o)) return o.forEach((v) => walk(v, key));
+    if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) walk(v, k);
+  };
+  walk({ a: snap.activities, m: snap.macros, p: snap.profilePages, g: snap.profileGroups });
+  for (const a of snap.activities || []) ids.delete(a.entity_id); // the activities themselves
+  for (const m of snap.macros || []) ids.delete(m.entity_id);
+  return [...ids].filter((x) => x.split(".").length >= 3);
+}
+
+/**
  * A copy of a snapshot without some entities (the integration's own IDs): they are not selected
  * again, and every place that used them is written back without them. References are counted
  * again, so the check after the restore expects exactly what is left.
  */
-export function leaveOut(snap, ids, why = "left out") {
+export function leaveOut(snap, ids, why = "left out", { foreign = false } = {}) {
   const prefix = snap.instanceId + ".";
-  const drop = new Set(ids.map((x) => (String(x).startsWith(prefix) ? String(x) : prefix + x)));
-  const own = [...drop].map((x) => x.slice(prefix.length));
+  // foreign: full IDs of other integrations' entities (a step for an integration that's gone)
+  const drop = new Set(ids.map((x) => (foreign || String(x).startsWith(prefix) ? String(x) : prefix + x)));
+  const own = foreign ? [...drop] : [...drop].map((x) => x.slice(prefix.length));
   const isGone = (v) => typeof v === "string" && drop.has(v);
   const refersGone = (v) => isGone(v) || (v && typeof v === "object" && !Array.isArray(v) && isGone(v.entity_id));
   const clean = (o) => {
