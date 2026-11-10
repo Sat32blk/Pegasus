@@ -750,13 +750,27 @@ function moveBox(mv, i, remote) {
   if (mv.status === "failed") return `<div class="mv failed"><span class="status st-failed">Move ${where} stopped</span> <span class="sub2" style="display:inline">while ${esc(STEP[mv.step] || mv.step)}</span>
       <p class="what">${friendlyMoveError(mv.error)}</p>
       <div class="acts"><button class="btn primary small" data-mv-retry="${esc(i.driver_id)}" data-remote="${esc(remote)}">Retry</button>${mv.missing?.length ? ` <button class="btn small" data-mv-retry="${esc(i.driver_id)}" data-leave-out="${esc(mv.missing.join(","))}" data-remote="${esc(remote)}">Continue without ${mv.missing.length === 1 ? "it" : "them"}</button>` : ""}<span class="sub2" style="margin:0">${mv.missing?.length ? `Retry waits for ${esc(mv.missing.join(", "))} again. <b>Continue without</b> finishes the move and takes ${mv.missing.length === 1 ? "that entity" : "those entities"} out of activities and pages (the integration doesn't offer ${mv.missing.length === 1 ? "it" : "them"}, so ${mv.missing.length === 1 ? "it" : "they"} can't work anyway).` : "Retry continues from where it stopped. What was saved is kept."}</span></div>
-      <details><summary>Details</summary><pre>${esc(mv.error || "")}\n\n${esc(mv.log.slice(-8).join("\n"))}</pre></details></div>`;
+      <details class="mvd" data-mvd="${esc(remote + "|" + i.driver_id)}" ${openMoveDetails.has(remote + "|" + i.driver_id) ? "open" : ""}><summary>Details</summary><div class="acts" style="margin:6px 0"><button class="btn small" data-copy="${esc(`${i.name} ${i.version || ""}: move ${where} stopped while ${STEP[mv.step] || mv.step}\n\n${mv.error || ""}\n\n${mv.log.join("\n")}`)}" data-what="the error and move log">Copy</button></div><pre>${esc(mv.error || "")}\n\n${esc(mv.log.slice(-8).join("\n"))}</pre></details></div>`;
   return `<div class="mv"><span class="status st-${mv.status === "done" ? "done" : "moving"}">${mv.status === "done" ? "Moved " + where : "Moving " + where}</span>${mv.status !== "done" ? ` <span class="sub2" style="display:inline">${esc(STEP[mv.step] || mv.step)}</span>` : ""}<pre>${esc(mv.log.slice(-5).join("\n"))}</pre></div>`;
 }
+// which move error Details are open (remote|driver id): the list is rebuilt on every refresh
+const openMoveDetails = new Set();
+$("#remoteSections").addEventListener("toggle", (e) => {
+  const d = e.target; if (!d.dataset?.mvd) return;
+  if (d.open) openMoveDetails.add(d.dataset.mvd); else openMoveDetails.delete(d.dataset.mvd);
+}, true);
+// don't rebuild under someone selecting text to copy; try again shortly
+function selectingIn(el) {
+  const sel = window.getSelection?.();
+  return !!sel && !sel.isCollapsed && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer);
+}
+let remotesHtml = "";
 function renderRemotes() {
   if (!st) return;
-  const openDetails = new Set($$("#remoteSections details[open]").map((d) => d.dataset.remote));
-  $("#remoteSections").innerHTML = st.remotes.map((r) => {
+  const box = $("#remoteSections");
+  if (selectingIn(box)) { clearTimeout(renderRemotes.t); renderRemotes.t = setTimeout(renderRemotes, 1500); return; }
+  const openDetails = new Set($$("#remoteSections details.more[open]").map((d) => d.dataset.remote));
+  const html = st.remotes.map((r) => {
     const moves = r.moves || {};
     const busy = Object.values(moves).some((m) => m.status === "running" || Date.now() - m.updated < 30000);
     loadRemote(r.remote, false, busy ? 4000 : 60000);
@@ -795,6 +809,9 @@ function renderRemotes() {
       ${used == null ? "" : `<span class="slots"><span class="slotbar" aria-hidden="true">${Array.from({ length: 10 }, (_, k) => `<i class="${k < used ? "used" : ""}"></i>`).join("")}</span>${used} of 10 install slots used${list.some((i) => isBridge(i.driver_id) && i.type === "CUSTOM") ? " (one by Pegasus Bridge)" : ""}</span>`}
       <button class="btn" style="margin-left:auto" data-reload="${esc(r.remote)}">Refresh</button></div>${rows}</section>`;
   }).join("");
+  if (html === remotesHtml) return; // nothing changed: leave the page (and what's open) alone
+  remotesHtml = html;
+  box.innerHTML = html;
 }
 $("#remoteSections").addEventListener("click", async (ev) => {
   const b = ev.target.closest("button"); if (!b) return;
