@@ -163,3 +163,30 @@ A move needs the integration's GitHub repository and a release tag for the insta
 | [Yolink Devices](https://github.com/mase1981/uc-intg-yolink) | python | `python -m uc_intg_yolink` | works |
 | [Z-Wave](https://github.com/JackJPowell/uc-intg-zwave) | python | `python intg-zwave/driver.py` | works |
 | [Zidoo](https://github.com/albaintor/integration-zidoo) | python | `python src/driver.py` | works |
+
+## Integrations on GitHub that aren't in the catalog (checked Nov 11, 2026, hub 0.12.0)
+
+A GitHub search for Unfolded Circle repositories gave 55 integration projects that the catalog doesn't list. Each was installed and started the same way. **37 of 55 work.**
+
+Work: Xbox Live, PS5 Control (jstnjx and sbr-labs), Harmony (pmaciocia), Frontier Silicon radio, MemCard PRO, Games Care RGB, DirecTV, McIntosh, Sleep Timer, Demo, HEOS 2.1.2 (minimeh), Spotify (mwood77, minimeh), Canton Smart, Philips Hue (official), Hue Scenes, FetchTV, OneTV, TiVo, Diagnostics, Template, Hyperion, Vizio TV, Sony AVR ZA, Sony Bravia, Home Assistant custom, Christie M 4K25, DoorBird, PJLink, Optoma PJLink, Wholphin, BluOS (jaccobezemer), SoundBridge, and after the fixes below: SteamOS HTPC, FM-Audio DSP, NAD power control.
+
+### Fixed in hub 0.12.0
+
+| Integration | What was wrong |
+|---|---|
+| SteamOS HTPC (blackgold9/htpc-steam) | a companion plugin's package.json beside the integration was taken for it; now the project that holds driver.json is used |
+| FM-Audio DSP | its bin/driver.js reads driver.json next to itself; the hub now puts a copy there |
+| NAD power control | uses telnetlib, which Python 3.13 no longer includes; the hub now adds the drop-in package (also for cgi, pipes, imghdr, audioop and the like) |
+
+### Not working, and why
+
+| Repository | Why |
+|---|---|
+| sjftech/uc-intg-rt4k (RetroTINK-4K) | its v1.0.0 release asks for a package that doesn't exist (uc-integration-api); fixed on its main branch, needs a new release |
+| johncarey70/uc-integration-kaleidescape-v1 | asks for pykaleidescape 2022.2.6, which isn't on PyPI |
+| celle150190-prog/uc-intg-heos-custom | its release tag has the code but no list of dependencies (no requirements.txt / pyproject.toml) |
+| ijc/uc-integration-mythtv | needs MythTV's own Python bindings, which only come with a MythTV installation |
+| ferdaze/russound-unfoldedcircle, ferdaze/uc-intg-russound-old | errors in their code (a syntax error; an API that no longer exists) |
+| ryan-haver/8x8-hdmi-matrix-hub | a whole server application with its own Docker setup; run it that way |
+| jstnjx/uc-intg-ps5-connect | not tested: one of its dependencies is a download the test machine wasn't allowed to fetch |
+| BastiKopo/UCRemote3Loxone, TheTimeWalker/webostv-integration, celle150190-prog/uc-intg-denonavr-custom, celle150190-prog/uc-intg-samsungtv_driver, splattner/goucrt, residualimages/unfoldedCircle_Integration-UD_ISY, IainDMC/remote3_display, LM1LC3N7/gladys-unfolded-circle, DanMayhem/ucos-kodi, halliwells99/Virgin-UK | not installable integrations: no driver.json (a library, patches for another integration, a Home Assistant or Gladys add-on, an empty repository) |

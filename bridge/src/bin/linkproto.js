@@ -11,12 +11,21 @@
 // JSON the remote and the driver exchange, so the link adds no serialisation cost, only 5 bytes.
 //
 // Heartbeat: a PING is only sent when nothing else has been heard for a while (any frame proves the
-// other side is alive). While the remote is in standby (STATUS { standby: true }) both sides check
-// in only once a minute, so the remote's Wi-Fi radio can stay asleep; on wake the bridge checks the
-// link at once and reconnects within about a second if it died during sleep.
+// other side is alive): the Bridge after 15 s of quiet, telling its last round trip along with it,
+// the hub only after 30 s. While the remote is in standby (STATUS { standby: true }) neither side
+// checks in at all, so the remote's Wi-Fi radio can stay asleep; on wake the Bridge checks the link
+// at once, and whenever it sends something after a quiet spell, and replaces a link that stays
+// silent (see Resume). Bridges and hubs from before resume keep their own, faster check-ins.
 //
 // Session opening is pipelined: the bridge sends OPEN and immediately follows with TEXT frames;
 // the hub queues them until its connection to the driver is up. No extra round trip.
+//
+// Resume (hub 0.12 / Bridge 0.5): a link that drops (the remote slept, Wi-Fi blinked) is replaced
+// without ending the sessions on it. Both ends count the channel frames (types 0x10-0x1f) they
+// sent and received on a link session and keep the last ones sent; the new connection's HELLO /
+// WELCOME carry the session id and "rx" (how many were received), and each end sends again what
+// the other missed. Frames "sent" while the link is away just wait in that window. The remote's
+// core and the integrations notice nothing; a press made right after waking is not lost.
 //
 // This file is shared: shared/linkproto.js is the source; bridge/src/bin and hub/src keep copies
 // (test/proto-sync-test.js fails when they drift; run `node tools/sync-proto.js`).
@@ -24,11 +33,11 @@
 export const PROTO_VERSION = 1;
 
 export const T = Object.freeze({
-  HELLO: 0x01, // bridge -> hub, ch 0, JSON { proto, token, bridge, remote, standby, lan? }
-  WELCOME: 0x02, // hub -> bridge, ch 0, JSON { proto, hub, version, drivers }
+  HELLO: 0x01, // bridge -> hub, ch 0, JSON { proto, token, bridge, remote, standby, lan?, caps?, resume?: { id, rx } }
+  WELCOME: 0x02, // hub -> bridge, ch 0, JSON { proto, hub, version, drivers, caps?, session?, resume?: { rx } }
   DENIED: 0x03, // hub -> bridge, ch 0, UTF-8 reason; hub closes the link after it
   CATALOG: 0x04, // hub -> bridge, ch 0, JSON { drivers, removed }
-  PING: 0x05, // either way, ch 0, 8 bytes opaque (sender's timestamp), answered with PONG
+  PING: 0x05, // either way, ch 0, opaque (8 bytes: sender's timestamp; bridge: + 8 bytes, its last round trip in ms), answered with PONG
   PONG: 0x06, // echo of the PING payload
   STATUS: 0x07, // bridge -> hub, ch 0, JSON { standby: bool }: the remote is asleep / awake
   OPEN: 0x10, // bridge -> hub, ch n, UTF-8 hosted driver id
@@ -94,13 +103,62 @@ export function safeCloseCode(code) {
   return 1000;
 }
 
-/** Time payload for PING: 8 bytes, milliseconds as float64 (performance.now based). */
-export function pingPayload(now = performance.now()) {
-  const b = Buffer.allocUnsafe(8);
+/**
+ * Time payload for PING: 8 bytes, milliseconds as float64 (performance.now based). The Bridge adds
+ * the round trip it last measured (8 more bytes), so the hub needn't ping the remote to know it.
+ */
+export function pingPayload(now = performance.now(), lastRttMs = null) {
+  const withRtt = typeof lastRttMs === "number" && Number.isFinite(lastRttMs);
+  const b = Buffer.allocUnsafe(withRtt ? 16 : 8);
   b.writeDoubleBE(now, 0);
+  if (withRtt) b.writeDoubleBE(lastRttMs, 8);
   return b;
 }
 export const pingTime = (payload) => (payload.length >= 8 ? payload.readDoubleBE(0) : NaN);
+export const pingRtt = (payload) => (payload.length >= 16 ? payload.readDoubleBE(8) : NaN);
+
+/** Frames that belong to a session (counted and kept for resume); control frames are not. */
+export const isChannelFrame = (type) => type >= 0x10 && type <= 0x1f;
+
+/**
+ * The channel frames one end sent on a link session: numbered from 1, the newest kept so they can
+ * be sent again after a reconnect. Bounded by count and bytes; when the other end needs a frame
+ * that's gone, the session can't be resumed.
+ */
+export class SendWindow {
+  constructor({ maxFrames = 1024, maxBytes = 2 * 1024 * 1024 } = {}) {
+    this.maxFrames = maxFrames;
+    this.maxBytes = maxBytes;
+    this.frames = []; // frames [first .. seq]
+    this.first = 1; // number of frames[0]
+    this.seq = 0; // number of the newest frame
+    this.bytes = 0;
+  }
+  /** Remembers a frame that is being (or will be) sent. */
+  push(frame) {
+    this.seq++;
+    this.frames.push(frame);
+    this.bytes += frame.length;
+    while (this.frames.length > 1 && (this.frames.length > this.maxFrames || this.bytes > this.maxBytes)) {
+      this.bytes -= this.frames.shift().length;
+      this.first++;
+    }
+  }
+  /** The other end has frames 1..n: can everything after it still be sent? */
+  covers(n) {
+    return Number.isInteger(n) && n >= this.first - 1 && n <= this.seq;
+  }
+  /** Frames n+1 .. seq. */
+  after(n) {
+    return this.frames.slice(Math.max(0, n + 1 - this.first));
+  }
+  /** Frames not yet known to have arrived (after n), in bytes. */
+  bytesAfter(n) {
+    let b = 0;
+    for (const f of this.after(n)) b += f.length;
+    return b;
+  }
+}
 
 /** Remote-side driver id for a hosted driver: pgs_<id>, only [A-Za-z0-9_-], max 36 chars. */
 export function remoteDriverId(hostedId) {

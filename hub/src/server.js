@@ -85,7 +85,8 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
   const infoTimer = setInterval(writeInfo, 60000);
   infoTimer.unref?.();
   setTimeout(writeInfo, 2000).unref?.();
-  const resources = new Resources({ sup, store, remotes: () => link.status(), ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
+  let pageSeenAt = 0; // last request from the hub page (or a tool using its API)
+  const resources = new Resources({ sup, store, remotes: () => link.status(), watching: () => Date.now() - pageSeenAt < 3 * 60000, ...(fetchRemoteStatus ? { fetchStatus: fetchRemoteStatus } : {}) });
 
   // One copy of each remote's integration list for every open page. Reading it costs the remote
   // work and Wi-Fi time, so: at most once a minute (every 4 s while a move runs), never while
@@ -250,7 +251,10 @@ export async function startHub({ port = PORT, dataDir = DATA, password = PASSWOR
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         return res.end(page());
       }
-      if (url.pathname.startsWith("/api/")) return await api(req, res, url);
+      if (url.pathname.startsWith("/api/")) {
+        pageSeenAt = Date.now();
+        return await api(req, res, url);
+      }
       send(res, 404, { error: "not found" });
     } catch (e) {
       send(res, e instanceof InstallError ? 400 : 500, { error: e.message });

@@ -1354,7 +1354,7 @@ function renderNetwork() {
       ${lineChart({ t0, t1: now, H: 130, yFmt: (v) => fmtBytes(v), series: [
         { bars: true, color: "var(--in)", offset: 0, points: h.map((x) => [x.t, x.bytesIn]) },
         { bars: true, color: "var(--out)", offset: 1, points: h.map((x) => [x.t, x.bytesOut]) }] })}
-      <div class="legend"><span><i style="background:var(--in)"></i>from the remote, per minute</span><span><i style="background:var(--out)"></i>to the remote, per minute</span></div>` : `<p class="sub2">No traffic in this period${r.standby ? " (the remote is asleep; the link checks in once a minute)" : ""}.</p>`}
+      <div class="legend"><span><i style="background:var(--in)"></i>from the remote, per minute</span><span><i style="background:var(--out)"></i>to the remote, per minute</span></div>` : `<p class="sub2">No traffic in this period${r.standby ? " (the remote is asleep; nothing is sent to it until it wakes)" : ""}.</p>`}
     </div>`;
   }).join("") : `<p class="sub2">No remote has linked since the hub started.</p>`;
 

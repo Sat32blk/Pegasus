@@ -122,7 +122,7 @@ function startBridge({ hubPort, token, corePort, state = {} }) {
   const tunnels = new Tunnels({ link, log });
   const core = new CoreClient(`127.0.0.1:${corePort}`, { apiKey: "test-key" });
   const registrar = new Registrar({ getCore: () => core, tunnels, state, save: () => {}, log, onChange: (registered) => link.report({ registered }) });
-  link.on("state", (s) => (s === "up" ? link.report({ registered: registrar.mapping() }) : tunnels.dropAll()));
+  link.on("state", (s) => s === "up" && link.report({ registered: registrar.mapping() }));
   link.on("catalog", (d, r) => registrar.sync(d, r));
   link.start();
   return { link, tunnels, registrar, state, logs, stop: async () => (link.stop(), tunnels.closeAll()) };
@@ -352,6 +352,91 @@ try {
     const s4 = await coreSession(dn.driver_url);
     assert.equal((await s4.req("get_driver_version")).code, 200);
     s4.close();
+  }
+
+  step("resume: a link that died during sleep is replaced without the core or the integration noticing");
+  {
+    const L = bridge.link;
+    await until(() => L.up, 5000, "link up");
+    const sr = await coreSession(dn.driver_url);
+    let closed = null;
+    sr.ws.on("close", (code) => (closed = code));
+    await sr.req("subscribe_events", { entity_ids: ["sim_switch"] });
+    const before = (await sr.req("get_entity_states")).msg_data.find((x) => x.entity_id === "sim_switch").attributes.state;
+    const sessions0 = hub.link.status()[0].sessions;
+    const opened0 = (await (await fetch(`http://127.0.0.1:${hub.server.address().port}/api/network`)).json()).integrations.find((x) => x.id === "sim_node").sessionsOpened;
+    L.setStandby(true);
+    await until(() => hub.link.status()[0]?.standby === true, 3000, "hub sees standby");
+    const deadWs = L.ws;
+    // the connection dies unnoticed while the remote sleeps (the hub stops hearing it)
+    for (const l of hub.link.links) l.ws.removeAllListeners("message");
+    // meanwhile the device changes (someone uses its own remote): told to the integration directly
+    const direct = await coreSession(`ws://127.0.0.1:${hub.store.get("sim_node").port}`);
+    await direct.req("entity_command", { entity_type: "switch", entity_id: "sim_switch", cmd_id: "toggle" });
+    direct.close();
+    const n0 = sr.events.filter((e) => e.msg === "entity_change").length;
+    const resumes0 = L.stats.resumes;
+    const t0 = Date.now();
+    L.setStandby(false);
+    // a press right after waking, before the dead link is found out: it must not be lost
+    const press = sr.req("entity_command", { entity_type: "switch", entity_id: "sim_switch", cmd_id: "toggle" });
+    assert.equal((await press).code, 200, "the press made on the dead link was lost");
+    const took = Date.now() - t0;
+    await until(() => L.up && L.ws !== deadWs, 3000, "new link");
+    await sleep(400);
+    assert.equal(closed, null, "the core's connection was closed");
+    assert.equal(L.stats.resumes, resumes0 + 1, "the link didn't resume");
+    assert.ok(L.stats.replayed >= 1, "nothing was sent again");
+    const after = (await sr.req("get_entity_states")).msg_data.find((x) => x.entity_id === "sim_switch").attributes.state;
+    assert.equal(after, before, "two toggles should end where it started");
+    const net = await (await fetch(`http://127.0.0.1:${hub.server.address().port}/api/network`)).json();
+    assert.equal(net.integrations.find((x) => x.id === "sim_node").sessionsOpened, opened0, "the integration got a new connection");
+    assert.equal(hub.link.status()[0].sessions, sessions0);
+    assert.equal(hub.link.status()[0].away, false);
+    console.log(`  same sessions on a new connection; the press made ${took} ms before the link was back got its answer; ${sr.events.filter((e) => e.msg === "entity_change").length - n0} update(s) delivered`);
+
+    // awake: the connection drops (Wi-Fi blinks); a command sent in the gap goes through
+    const dead2 = L.ws;
+    const resumes1 = L.stats.resumes;
+    for (const l of hub.link.links) l.ws.terminate();
+    const t1 = Date.now();
+    assert.equal((await sr.req("get_driver_version")).code, 200);
+    await until(() => L.up && L.ws !== dead2, 3000, "new link");
+    assert.ok(closed === null && L.stats.resumes === resumes1 + 1 && hub.link.status()[0].resumes >= 2);
+    console.log(`  awake drop: answered ${Date.now() - t1} ms later on a new connection, sessions kept`);
+
+    // the hub can't resume (it no longer has what the Bridge missed): sessions end, the core reconnects
+    L.rx = -5;
+    for (const l of hub.link.links) l.ws.terminate();
+    await until(() => closed !== null, 5000, "core connection closed");
+    assert.equal(closed, 1012);
+    await until(() => L.up, 5000, "link up again");
+    assert.equal(hub.link.status().length, 1);
+    assert.equal(hub.link.status()[0].sessions, sessions0 - 1, "the old sessions were not closed on the hub");
+    const s5 = await coreSession(dn.driver_url);
+    assert.equal((await s5.req("get_driver_version")).code, 200);
+    s5.close();
+    console.log("  no resume possible: sessions closed (1012), a fresh link, the core reconnects");
+  }
+
+  step("awake and quiet: one check-in per 15 s; reports send only what is new");
+  {
+    const L = bridge.link;
+    await until(() => L.up, 5000, "link up");
+    await sleep(1200);
+    const p0 = L.stats.pings;
+    const hubLink = [...hub.link.links][0];
+    const hp0 = hubLink.lastPing || 0;
+    await sleep(7000);
+    assert.equal(L.stats.pings, p0, "the Bridge checked in within 7 s of quiet");
+    assert.equal(hubLink.lastPing || 0, hp0, "the hub pinged the remote");
+    assert.ok(L.hubCan("delta") && L.hubCan("resume"));
+    L.report({ log: ["one", "two"] });
+    L.report({ logAdd: ["three"] });
+    await until(() => hub.link.bridgeLog("test-remote")?.length === 3, 2000, "log lines");
+    assert.deepEqual(hub.link.bridgeLog("test-remote"), ["one", "two", "three"]);
+    assert.equal(typeof L.hubInfo.batteryUpTo, "number");
+    console.log("  no check-ins in 7 quiet seconds; a new log line is added to what the hub has");
   }
 
   step("a stopped driver stays registered on the remote");

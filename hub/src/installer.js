@@ -120,7 +120,21 @@ export class Installer {
     // 3. Python source
     const pyMarker = pickNearest(dir, files, "requirements.txt", driverJsonPath) || pickNearest(dir, files, "pyproject.toml", driverJsonPath);
 
-    if (pkgPath && (!pyMarker || depth(dir, pkgPath) <= depth(dir, pyMarker))) {
+    // Both a package.json and Python files: the one that goes with driver.json (same folder or
+    // above it) is the integration; the other is something else in the repository (a companion
+    // plugin, a web page, lint tooling). A package.json that names nothing to run is tooling too.
+    const jsonDir = path.dirname(driverJsonPath);
+    const with_ = (f) => !!f && (jsonDir + path.sep).startsWith(path.dirname(f) + path.sep);
+    let node = pkgPath && (!pyMarker || depth(dir, pkgPath) <= depth(dir, pyMarker));
+    if (pkgPath && pyMarker) {
+      if (with_(pyMarker) && !with_(pkgPath)) node = false;
+      else if (with_(pkgPath) && !with_(pyMarker)) node = true;
+      else if (node && !nodeRunnable(path.dirname(pkgPath))) {
+        log("its package.json names nothing to run (tooling only): treating it as a Python integration");
+        node = false;
+      }
+    }
+    if (node) {
       return { id, driver, ...(await this.#prepareNode(dir, path.dirname(pkgPath), log, depsBefore)) };
     }
     if (pyMarker) {
@@ -173,6 +187,10 @@ export class Installer {
       if (fs.existsSync(path.join(bin, "package.json")) && !fs.existsSync(path.join(bin, "node_modules"))) {
         await run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], { cwd: bin, log });
       }
+      // the remote's archive has driver.json beside bin/; a driver that reads it next to itself
+      // (bin/driver.json) gets a copy there
+      const up = path.join(path.dirname(bin), "driver.json");
+      if (!entries.includes("driver.json") && fs.existsSync(up)) fs.copyFileSync(up, path.join(bin, "driver.json"));
       log("runtime: Node.js (custom-integration archive)");
       return { runtime: "node", command: ["node", "driver.js"], cwd: rel(root, bin) };
     }
@@ -247,6 +265,16 @@ export class Installer {
       if (!done) log("that didn't work (an old package may not build on this Python); using the newest dependencies");
     }
     if (!done) await run(pip, pipArgs, { cwd: projDir, log });
+    // Modules Python 3.13 dropped from its standard library (the remote's builds use an older
+    // Python that still has them): if the integration imports one, add its drop-in package
+    const gone = removedStdlib(files.filter((x) => x.endsWith(".py") && x.startsWith(projDir) && !/[\\/](tests?|\.venv|node_modules)[\\/]/.test(x)).slice(0, 600));
+    if (gone.length) {
+      const ver = await run(py, ["-c", "import sys;print(sys.version_info >= (3, 13))"], { log: () => {}, allowFail: true, capture: true }).catch(() => null);
+      if (!ver || !/False/.test(String(ver.stdout || ver.out || ""))) {
+        log(`it uses ${gone.map((g) => g.module).join(", ")}, which newer Python no longer includes: adding ${gone.map((g) => g.pkg).join(", ")}`);
+        await run(pip, ["install", "--no-cache-dir", "--disable-pip-version-check", ...gone.map((g) => g.pkg)], { cwd: projDir, log, allowFail: true });
+      }
+    }
     await this.#buildFrontends(root, files, log);
 
     // Find the entry point, most reliable first:
@@ -460,6 +488,33 @@ function pickDriverJson(root, files) {
 }
 
 /** The file named `name` closest to the root, preferring ones at or above the driver.json folder. */
+/** A package.json that can be run: has an entry file or a start script (not just lint tooling). */
+function nodeRunnable(pkgDir) {
+  const pkg = readJson(path.join(pkgDir, "package.json"), {});
+  if (pkg.main || pkg.bin || pkg.scripts?.start || pkg.scripts?.build) return true;
+  return ["driver.js", "index.js", "src/driver.js", "src/index.js", "src/driver.ts", "src/index.ts"].some((f) => fs.existsSync(path.join(pkgDir, f)));
+}
+
+/** Standard-library modules removed in Python 3.13 that have a drop-in package on PyPI. */
+const REMOVED_STDLIB = { telnetlib: "standard-telnetlib", cgi: "standard-cgi", crypt: "standard-crypt", imghdr: "standard-imghdr", sndhdr: "standard-sndhdr", pipes: "standard-pipes", nntplib: "standard-nntplib", audioop: "audioop-lts", chunk: "standard-chunk", aifc: "standard-aifc", sunau: "standard-sunau", uu: "standard-uu", xdrlib: "standard-xdrlib", mailcap: "standard-mailcap", asynchat: "pyasynchat", asyncore: "pyasyncore", smtpd: "aiosmtpd" };
+export function removedStdlib(pyFiles) {
+  const found = new Map();
+  for (const f of pyFiles) {
+    let t;
+    try {
+      t = fs.readFileSync(f, "utf8");
+    } catch {
+      continue;
+    }
+    for (const m of t.matchAll(/^\s*(?:import|from)\s+([A-Za-z_][A-Za-z0-9_]*)/gm)) {
+      const pkg = REMOVED_STDLIB[m[1]];
+      // (not when the repository has its own module of that name)
+      if (pkg && m[1] !== "smtpd" && !pyFiles.some((x) => path.basename(x) === `${m[1]}.py`)) found.set(m[1], pkg);
+    }
+  }
+  return [...found].map(([module, pkg]) => ({ module, pkg }));
+}
+
 function pickNearest(root, files, name, near) {
   const all = files.filter((f) => path.basename(f) === name);
   if (!all.length) return null;

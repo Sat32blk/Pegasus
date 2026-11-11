@@ -30,33 +30,57 @@ const recentLog = [];
 const log = (...a) => {
   console.log("[pegasus]", ...a);
   recentLog.push(`${new Date().toISOString().slice(5, 19).replace("T", " ")} ${a.join(" ")}`);
+  logSeq++;
   if (recentLog.length > 150) recentLog.splice(0, recentLog.length - 150);
   scheduleReport();
 };
 
-/** Tells the hub how things stand on this remote: IDs, problems, notes, recent log and battery. */
+/**
+ * Tells the hub how things stand on this remote: IDs, problems, notes, recent log and battery.
+ * After (re)connecting everything is sent; from then on only what changed (hub 0.12+), so a new
+ * log line or battery reading costs a few hundred bytes of Wi-Fi instead of the whole report.
+ */
 let reportTimer = null;
-let resendBattery = true; // after (re)connecting, send the last 2 days again (the hub ignores duplicates)
+let reportAll = true;
+let logSeq = 0; // number of log lines written so far
+let logSent = 0; // ...and how many of them the hub has
+const lastSent = {}; // section -> JSON last sent
 function scheduleReport() {
   if (reportTimer) return;
   reportTimer = setTimeout(() => {
     reportTimer = null;
     if (!link?.up || !registrar) return;
+    const delta = link.hubCan("delta") && !reportAll;
     const s = registrar.summary();
-    const batt = battery ? battery.pending(resendBattery) : [];
-    link.report({
-      battery: batt,
+    // after (re)connecting: the readings the hub doesn't have yet (it says how far it has them;
+    // a hub before 0.12 gets the last 2 days again and ignores the duplicates)
+    const batt = battery ? battery.pending(reportAll, link.hubCan("delta") ? link.hubInfo?.batteryUpTo : undefined) : [];
+    const sections = {
       registered: registrar.mapping(),
       problems: Object.fromEntries(s.problems),
       notes: Object.fromEntries(s.notes),
       access: !!config?.apiKey,
-      moves: mover ? mover.summary() : {},
-      log: recentLog.slice(-150),
-      // the Bridge's own processor time on the remote (the hub's battery estimate counts it)
-      cpu: { us: (() => { const u = process.cpuUsage(); return u.user + u.system; })(), at: Date.now() }
-    });
+      moves: mover ? mover.summary() : {}
+    };
+    const msg = {};
+    for (const [k, v] of Object.entries(sections)) {
+      const j = JSON.stringify(v);
+      if (delta && lastSent[k] === j) continue;
+      lastSent[k] = j;
+      msg[k] = v;
+    }
+    if (batt.length || !delta) msg.battery = batt;
+    if (delta) {
+      const fresh = Math.min(logSeq - logSent, recentLog.length);
+      if (fresh > 0) msg.logAdd = recentLog.slice(-fresh);
+    } else msg.log = recentLog.slice(-150);
+    logSent = logSeq;
+    // the Bridge's own processor time on the remote (the hub's battery estimate counts it)
+    const u = process.cpuUsage();
+    msg.cpu = { us: u.user + u.system, at: Date.now() };
+    link.report(msg);
     battery?.markSent(batt);
-    resendBattery = false;
+    reportAll = false;
   }, 500);
 }
 
@@ -118,7 +142,8 @@ function statusText() {
     case "up": {
       const n = s ? `${s.onRemote}/${s.hosted} integrations` : "";
       const p = s?.problems.length ? ` · ${s.problems.length} waiting` : "";
-      return `Linked · ${link.rttMs != null ? link.rttMs.toFixed(1) + " ms" : "…"} · ${n}${p}`;
+      // (the round trip has its own sensor: here it would change this text on every check-in)
+      return `Linked · ${n}${p}`;
     }
     case "denied":
       return "Pairing code refused: run setup again";
@@ -138,12 +163,17 @@ function refreshStatus() {
   }
 }
 
+// The latency sensor: at most twice a minute, and only when the figure moved (every update is
+// work for the remote: the core stores it and redraws any page that shows it).
 let lastRttPublished = 0;
+let lastRttValue = null;
 function publishRtt(rtt) {
-  if (Date.now() - lastRttPublished < 4000) return;
-  lastRttPublished = Date.now();
+  const now = Date.now();
+  const moved = lastRttValue == null || Math.abs(rtt - lastRttValue) >= Math.max(1, lastRttValue * 0.25);
+  if (!moved || now - lastRttPublished < 30000) return;
+  lastRttPublished = now;
+  lastRttValue = rtt;
   publish(latencySensor, { state: uc.SensorStates.On, value: Math.round(rtt * 10) / 10, unit: "ms" });
-  refreshStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -168,14 +198,14 @@ async function startLink() {
   });
   link.on("state", (state) => {
     if (state === "up") {
-      resendBattery = true;
+      reportAll = true; // a report sent as the old link died may not have arrived
+      lastRttValue = null;
       scheduleReport();
-      setTimeout(() => mover?.reconcile().catch((e) => log(`reconcile: ${e.message}`)), 3000);
+      // a link that carried on where the last one stopped changes nothing for unfinished moves
+      if (!link.resumed) setTimeout(() => mover?.reconcile().catch((e) => log(`reconcile: ${e.message}`)), 3000);
     }
-    if (state !== "up") {
-      tunnels.dropAll();
-      publish(latencySensor, { state: uc.SensorStates.Unavailable });
-    }
+    // (the link ends its own sessions when it can't resume them; until then they wait for it)
+    if (state !== "up" && !link.suspended) publish(latencySensor, { state: uc.SensorStates.Unavailable });
     refreshStatus();
   });
   link.on("catalog", async (drivers, removed) => {

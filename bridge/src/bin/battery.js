@@ -84,9 +84,14 @@ export class BatteryTracker {
     }
   }
 
-  /** Samples the hub doesn't have yet (all of the last 2 days after a reconnect; the hub ignores duplicates). */
-  pending(resend = false) {
-    const from = resend ? Date.now() - 2 * 24 * 3600 * 1000 : this.sent;
+  /**
+   * Samples the hub doesn't have yet. After a reconnect (resend): those newer than hubHas, the time
+   * of the newest one the hub says it has; without that, all of the last 2 days (the hub ignores
+   * duplicates). Never more than 30 days back.
+   */
+  pending(resend = false, hubHas = undefined) {
+    let from = this.sent;
+    if (resend) from = typeof hubHas === "number" && hubHas >= 0 ? Math.min(hubHas, Date.now()) : Date.now() - 2 * 24 * 3600 * 1000;
     return this.samples.filter((s) => s.t > from);
   }
 

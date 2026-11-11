@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Installer, InstallError, dockerByConfigPath } from "../hub/src/installer.js";
+import { Installer, InstallError, dockerByConfigPath, removedStdlib } from "../hub/src/installer.js";
 import { pyinstallerEntry } from "../hub/src/buildentry.js";
 import { publicAddress } from "../hub/src/linkserver.js";
 import { compareVersions } from "../hub/src/util.js";
@@ -139,6 +139,51 @@ try {
     await inst.prepare(dir, log);
     assert.ok(fs.existsSync(path.join(dir, "intg-m/static/app/index.html")), "the UI wasn't built");
     console.log("  ui/ built into intg-m/static/app");
+  }
+
+  step("the project that goes with driver.json is the integration, not a companion plugin beside it (SteamOS HTPC)");
+  {
+    const dir = repo({
+      "integration/driver.json": DJ("steamos"),
+      "integration/requirements.txt": "",
+      "integration/src/uc_intg_steamos/__init__.py": "",
+      "integration/src/uc_intg_steamos/driver.py": "if __name__ == '__main__':\n    pass\n",
+      "plugin/package.json": JSON.stringify({ name: "decky-plugin", main: "dist/index.js" }),
+      "plugin/dist/index.js": "window.x = 1;\n"
+    });
+    const p = await inst.prepare(dir, log);
+    assert.equal(p.runtime, "python", "the plugin's package.json was taken for the integration");
+    console.log("  " + p.command.join(" "));
+  }
+
+  step("a package.json that only holds lint tooling doesn't make a Python integration a Node.js one (HDMI matrix)");
+  {
+    const dir = repo({
+      "driver.json": DJ("matrix"),
+      "requirements.txt": "",
+      "package.json": JSON.stringify({ name: "tooling", scripts: { "lint:js": "eslint ." } }),
+      "driver.py": "if __name__ == '__main__':\n    pass\n"
+    });
+    const p = await inst.prepare(dir, log);
+    assert.equal(p.runtime, "python");
+    console.log("  " + p.command.join(" "));
+  }
+
+  step("an archive whose bin/driver.js reads driver.json next to itself gets a copy there (FM-Audio DSP)");
+  {
+    const dir = repo({ "driver.json": DJ("fm"), "bin/driver.js": "require('fs').readFileSync(__dirname + '/driver.json');\n" });
+    const p = await inst.prepare(dir, log);
+    assert.deepEqual(p.command, ["node", "driver.js"]);
+    assert.ok(fs.existsSync(path.join(dir, "bin", "driver.json")));
+    console.log("  bin/driver.json copied");
+  }
+
+  step("modules dropped from Python 3.13 (telnetlib...) are found, so their drop-in packages get installed (NAD power control)");
+  {
+    const dir = repo({ "a.py": "import os\nimport telnetlib\nfrom cgi import escape\n", "b.py": "import pipes\n", "pipes.py": "" });
+    const gone = removedStdlib([path.join(dir, "a.py"), path.join(dir, "b.py"), path.join(dir, "pipes.py")]);
+    assert.deepEqual(gone.map((g) => g.pkg).sort(), ["standard-cgi", "standard-telnetlib"]); // pipes is the repository's own
+    console.log("  " + gone.map((g) => `${g.module} -> ${g.pkg}`).join(", "));
   }
 
   step("release tags written v.0.8.1 sort like v0.8.1 (Onkyo)");

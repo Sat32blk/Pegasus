@@ -7,7 +7,8 @@ import os from "node:os";
 
 const MINUTES = 24 * 60;
 const SAMPLE_MS = 10000;
-const REMOTE_MS = 60000;
+const REMOTE_MS = 60000; // while someone has the hub page open
+const REMOTE_IDLE_MS = 15 * 60000; // otherwise: every read is a request the remote has to wake its radio for
 
 /** Per-minute aggregation of a few numeric fields: avg and max of each. */
 class Series {
@@ -45,7 +46,9 @@ class Series {
 
 export class Resources {
   /** remotes(): [{ remote, address, standby }] of linked remotes */
-  constructor({ sup, store, remotes, fetchStatus = fetchRemoteStatus }) {
+  /** watching(): true while someone looks at the hub page (remotes are then read once a minute) */
+  constructor({ sup, store, remotes, fetchStatus = fetchRemoteStatus, watching = () => true }) {
+    this.watching = watching;
     this.sup = sup;
     this.store = store;
     this.remotes = remotes;
@@ -56,7 +59,8 @@ export class Resources {
     this.remote = new Map(); // remote name -> { series, last, at, error }
     this.lastCpu = { usage: process.cpuUsage(), at: Date.now() };
     // every 10 s: the hub's own figures, and any linked remote not read for a minute (so a newly
-    // linked remote is read within seconds, then once a minute)
+    // linked remote is read within seconds, then once a minute while the page is open; with
+    // nobody looking only every 15 minutes, to leave the remote's radio alone)
     this.timer = setInterval(() => {
       this.sample();
       this.sampleRemotes({ due: true }).catch(() => {});
@@ -91,7 +95,7 @@ export class Resources {
       let e = this.remote.get(r.remote);
       if (!e) this.remote.set(r.remote, (e = { series: new Series(), last: null, at: null, error: null, tried: 0 }));
       if (r.standby || !r.address) continue; // don't wake the remote for this
-      if (due && Date.now() - (e.tried || 0) < REMOTE_MS - 1000) continue;
+      if (due && Date.now() - (e.tried || 0) < (this.watching() ? REMOTE_MS : REMOTE_IDLE_MS) - 1000) continue;
       e.tried = Date.now();
       try {
         const st = await this.fetchStatus(r.address);

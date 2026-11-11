@@ -8,10 +8,19 @@ import { redact } from "./redact.js";
 import { NetStats } from "./netstats.js";
 import { SessionShaper } from "./shaper.js";
 import { Rpc } from "./linkproto.js";
-import { T, PROTO_VERSION, pingPayload, pingTime, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
+import { T, PROTO_VERSION, pingPayload, pingTime, pingRtt, isChannelFrame, SendWindow, encode, decode, json, parseJson, encodeClose, decodeClose, safeCloseCode, remoteDriverId } from "./linkproto.js";
 
 const HELLO_TIMEOUT_MS = 5000;
 const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
+const CAPS = ["resume", "delta"];
+const WINDOW = { maxFrames: 2048, maxBytes: 4 * 1024 * 1024 }; // frames kept per remote for resume
+// How long the sessions of a lost link wait for the remote to come back. Asleep, a remote can be
+// away for many hours; awake, the Bridge gives up after 8 s, but a remote that fell asleep without
+// managing to say so looks "awake" here, so its sessions wait a while too.
+const PARK_ASLEEP_MS = Number(process.env.PEGASUS_PARK_ASLEEP_MS) || 24 * 3600 * 1000;
+const PARK_AWAKE_MS = Number(process.env.PEGASUS_PARK_AWAKE_MS) || 10 * 60 * 1000;
+// check-ins: awake links (ping when quiet this long / dead after), old Bridges, old Bridges asleep
+const BEAT = { now: { ping: 30000, dead: 75000 }, old: { ping: 5000, dead: 20000 }, oldAsleep: { ping: 60000, dead: 180000 } };
 
 export class LinkServer {
   constructor({ store, supervisor, version, log, battery, net, artwork }) {
@@ -23,26 +32,33 @@ export class LinkServer {
     this.version = version;
     this.log = log;
     this.links = new Set();
+    this.parked = new Map(); // link session id -> link whose connection is gone but sessions wait
     this.wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 64 * 1024 * 1024 });
     this.rpcHandlers = new Map(); // requests from bridges: handle(method, async (params, link) => result)
     this.wss.on("connection", (ws, req) => this.#accept(ws, req));
     this.catalogTimer = null;
-    // Measure each link's round trip (shown on the page) and drop links that stopped answering.
-    // Only quiet links are pinged; a remote in standby only once a minute so its radio can sleep.
+    // Drop links that stopped answering. Every check-in wakes the remote's Wi-Fi radio, so the hub
+    // leaves them to the Bridge (0.5+): it checks in when its link is quiet and tells its round
+    // trip along with it; the hub only asks when it has heard nothing for a good while. A remote in
+    // standby isn't pinged at all: nothing is sent to it anyway, and when it wakes its Bridge checks
+    // the link at once (its sessions are kept either way). Older Bridges: as before.
     this.pingTimer = setInterval(() => {
       const now = Date.now();
       for (const l of this.links) {
         if (!l.ready) continue;
-        const t = l.standby ? { ping: 60000, dead: 180000 } : { ping: 5000, dead: 20000 };
         const quiet = now - l.lastHeard;
+        if (l.resumable && l.standby) {
+          if (quiet > PARK_ASLEEP_MS) l.ws.terminate();
+          continue;
+        }
+        const t = l.resumable ? BEAT.now : l.standby ? BEAT.oldAsleep : BEAT.old;
         if (quiet > t.dead) {
           this.log(`link to ${l.remote} silent for ${Math.round(quiet / 1000)} s, dropping it`);
           l.ws.terminate();
           continue;
         }
-        // quiet links are pinged to see they're alive; busy ones every 30 s too, for the round-trip figures
-        // (the remote's radio is awake anyway while there's traffic)
-        const due = quiet >= t.ping - 50 ? t.ping - 50 : l.standby ? Infinity : 30000;
+        // old Bridges: busy links every 30 s too, for the round-trip figures
+        const due = quiet >= t.ping - 50 ? t.ping - 50 : l.resumable || l.standby ? Infinity : 30000;
         if (now - (l.lastPing || 0) >= due) {
           l.lastPing = now;
           this.#tx(l, encode(T.PING, 0, pingPayload()));
@@ -52,10 +68,28 @@ export class LinkServer {
     this.pingTimer.unref?.();
   }
 
-  /** Sends a frame to a bridge, counting it for the network statistics. */
+  /**
+   * Sends a frame to a bridge, counting it for the network statistics. Session frames are also
+   * remembered, to send again if the link is replaced before they arrived; while it is away they
+   * only wait there.
+   */
   #tx(link, frame) {
-    if (link.ws.readyState !== WebSocket.OPEN) return;
-    link.ws.send(frame);
+    if (link.ended) return;
+    if (link.resumable && isChannelFrame(frame[0])) link.win.push(frame);
+    const ws = link.ws;
+    if (ws.readyState !== WebSocket.OPEN) return;
+    // frames written in the same turn (updates held while the remote slept, a burst from an
+    // integration) leave in one packet: fewer wake-ups for the remote's radio
+    const sock = ws._socket;
+    if (sock && !link.corked) {
+      link.corked = true;
+      sock.cork();
+      process.nextTick(() => {
+        link.corked = false;
+        sock.uncork();
+      });
+    }
+    ws.send(frame);
     if (link.remote) this.net.frame(link.remote, "out", frame.length);
   }
 
@@ -130,14 +164,18 @@ export class LinkServer {
     return out;
   }
 
+  /**
+   * Linked remotes. away: the connection is gone but the remote's sessions are kept for when it
+   * is back (asleep with Wi-Fi off, usually); nothing can be asked of it meanwhile.
+   */
   status() {
-    return [...this.links]
-      .filter((l) => l.ready)
-      .map((l) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: l.rttMs, standby: !!l.standby, standbySince: l.standbySince || null, access: l.access ?? null, bridgeCpu: bridgeCpu(l), problems: l.problems || {}, notes: l.notes || {}, moves: l.moves || {} }));
+    const row = (l, away) => ({ remote: l.remote, bridge: l.bridge, address: l.address, since: l.since, sessions: l.sessions.size, rttMs: away ? null : l.rttMs, standby: !!l.standby || away, standbySince: l.standbySince || null, away, resumes: l.resumes || 0, access: l.access ?? null, bridgeCpu: bridgeCpu(l), problems: l.problems || {}, notes: l.notes || {}, moves: l.moves || {} });
+    const live = [...this.links].filter((l) => l.ready);
+    return [...live.map((l) => row(l, false)), ...[...this.parked.values()].filter((l) => !live.some((x) => x.remote === l.remote)).map((l) => row(l, true))];
   }
 
   #accept(ws, req) {
-    const link = {
+    let link = {
       ws,
       ready: false,
       address: (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").toString().replace(/^::ffff:/, ""),
@@ -148,9 +186,16 @@ export class LinkServer {
       sessions: new Map(),
       remote: null,
       bridge: null,
-      rttMs: null
+      rttMs: null,
+      rx: 0, // session frames received (for resume)
+      win: new SendWindow(WINDOW),
+      sessionId: crypto.randomBytes(9).toString("base64url"),
+      resumable: false
     };
-    link.rpc = new Rpc((frame) => this.#tx(link, frame), this.rpcHandlers);
+    {
+      const l = link;
+      l.rpc = new Rpc((frame) => this.#tx(l, frame), this.rpcHandlers);
+    }
     this.links.add(link);
     const helloTimer = setTimeout(() => ws.close(4001, "no hello"), HELLO_TIMEOUT_MS);
 
@@ -168,7 +213,50 @@ export class LinkServer {
           ws.send(encode(T.DENIED, 0, "wrong pairing code"));
           return ws.close(4003, "denied");
         }
+        const fresh = link;
+        const name = String(hello.remote || "remote").replace(/\.local\.?(?=$| \()/i, "").replace(/\.(?=$| \()/, "").slice(0, 80);
+        const resumable = Array.isArray(hello.caps) && hello.caps.includes("resume");
+        // The Bridge's link before this one: carry its sessions on, if they are still here and
+        // everything it missed can be sent again. The connection changes, the link stays.
+        const old = resumable && hello.resume && typeof hello.resume.id === "string" ? this.parked.get(hello.resume.id) || [...this.links].find((l) => l.ready && l.sessionId === hello.resume.id) : null;
+        if (old && old !== fresh && !old.ended && old.remote === name && old.win.covers(hello.resume.rx)) {
+          this.links.delete(fresh);
+          clearTimeout(old.parkTimer);
+          this.parked.delete(old.sessionId);
+          const dead = old.ws;
+          old.ws = ws;
+          old.corked = false;
+          if (dead !== ws && dead.readyState <= WebSocket.OPEN) dead.terminate(); // hadn't noticed yet
+          link = old;
+          link.address = fresh.address;
+          link.host = fresh.host;
+          link.lastHeard = Date.now();
+          link.bridge = String(hello.bridge || "?").slice(0, 20);
+          this.links.add(link);
+          const lanAddr = String(hello.lan || "");
+          if (isRemoteAddress(lanAddr)) link.address = lanAddr;
+          const again = link.win.after(hello.resume.rx);
+          const wasAsleep = link.standby;
+          link.standby = !!hello.standby;
+          if (wasAsleep !== link.standby) link.standbySince = Date.now();
+          link.resumes = (link.resumes || 0) + 1;
+          this.log(`link back: ${link.remote} from ${link.address}, ${link.sessions.size} session(s) carried on${again.length ? `, ${again.length} message(s) sent again` : ""}`);
+          this.net.linkUp(link.remote);
+          ws.send(json(T.WELCOME, { proto: PROTO_VERSION, hub: process.env.PEGASUS_NAME || "Pegasus Hub", version: this.version, caps: CAPS, session: link.sessionId, resume: { rx: link.rx }, batteryUpTo: this.#batteryUpTo(link.remote), drivers: this.catalog(), ...this.#removed() }));
+          ws._socket?.cork();
+          for (const frame of again) {
+            ws.send(frame);
+            this.net.frame(link.remote, "out", frame.length);
+          }
+          ws._socket?.uncork();
+          if (!link.standby) this.#deliverHeld(link);
+          this.onRemoteChange?.(link.remote);
+          return;
+        }
+        // a new link from a remote replaces whatever was left of its last one
+        for (const l of [...this.parked.values(), ...this.links]) if (l !== link && l.ready && l.remote === name) this.#endLink(l, "replaced by a new link");
         link.ready = true;
+        link.resumable = resumable;
         // the remote's own address, as it reports it: behind Docker NAT the connection may come
         // from the gateway instead, which isn't where the remote's API is
         const lan = String(hello.lan || "");
@@ -179,7 +267,7 @@ export class LinkServer {
         link.standby = !!hello.standby;
         // the remote's host name is sometimes reported with ".local" (it changed after a restart
         // of the remote): one name, so its history and battery figures stay together
-        link.remote = String(hello.remote || "remote").replace(/\.local\.?(?=$| \()/i, "").replace(/\.(?=$| \()/, "").slice(0, 80);
+        link.remote = name;
         link.bridge = String(hello.bridge || "?").slice(0, 20);
         this.log(`link up: ${link.remote} (bridge ${link.bridge}) from ${link.address}`);
         this.net.linkUp(link.remote);
@@ -189,36 +277,82 @@ export class LinkServer {
             proto: PROTO_VERSION,
             hub: process.env.PEGASUS_NAME || "Pegasus Hub",
             version: this.version,
+            ...(resumable ? { caps: CAPS, session: link.sessionId, batteryUpTo: this.#batteryUpTo(link.remote) } : {}),
             drivers: this.catalog(),
             ...this.#removed()
           })
         );
         return;
       }
+      if (isChannelFrame(f.type)) link.rx++;
       this.net.frame(link.remote, "in", data.length ?? f.payload.length + 5);
       this.#frame(link, f);
     });
 
     ws.on("close", () => {
-      link.rpc.failAll("remote link lost");
       clearTimeout(helloTimer);
+      if (link.ws !== ws) return; // this connection was replaced; the link lives on the new one
+      link.rpc.failAll("remote link lost");
       this.links.delete(link);
-      for (const [ch, s] of link.sessions) this.#endSession(link, ch, s, 1001, "link closed", false);
-      if (link.ready) {
-        this.log(`link down: ${link.remote}`);
-        this.net.linkDown(link.remote);
+      if (link.ended) return;
+      if (!link.ready) return;
+      this.net.linkDown(link.remote);
+      // Keep the sessions for the Bridge's next link (it slept, or Wi-Fi blinked): the integrations
+      // stay connected, what they send meanwhile is held like for a sleeping remote.
+      if (link.resumable && !this.closing) {
+        const ms = link.standby ? PARK_ASLEEP_MS : PARK_AWAKE_MS;
+        this.log(`link down: ${link.remote}${link.sessions.size ? ` (${link.sessions.size} session(s) wait for it${link.standby ? ", it is asleep" : ""})` : ""}`);
+        this.parked.set(link.sessionId, link);
+        link.parkTimer = setTimeout(() => this.#endLink(link, "the remote didn't come back"), ms);
+        link.parkTimer.unref?.();
+        this.onRemoteChange?.(link.remote);
+        return;
       }
+      this.log(`link down: ${link.remote}`);
+      this.#endLink(link);
     });
     ws.on("error", () => {});
+  }
+
+  /** Ends a link for good: its sessions close (the integrations see the remote disconnect). */
+  #endLink(link, why, { keepSocket = false } = {}) {
+    if (link.ended) return;
+    link.ended = true;
+    clearTimeout(link.parkTimer);
+    if (this.parked.get(link.sessionId) === link) {
+      this.parked.delete(link.sessionId);
+      if (why && link.sessions.size) this.log(`${link.remote}: ${link.sessions.size} waiting session(s) closed (${why})`);
+    }
+    this.links.delete(link);
+    link.rpc.failAll("remote link lost");
+    for (const [ch, s] of link.sessions) this.#endSession(link, ch, s, 1001, "link closed", false);
+    if (!keepSocket && link.ws.readyState <= WebSocket.OPEN) link.ws.terminate();
+  }
+
+  /** Time of the newest battery reading the hub has from a remote (the Bridge sends newer ones). */
+  #batteryUpTo(remote) {
+    try {
+      const list = this.battery?.samples(remote) || [];
+      return list.length ? list[list.length - 1].t : 0;
+    } catch {
+      return 0;
+    }
   }
 
   #frame(link, f) {
     const { type, channel, payload } = f;
     if (link.rpc.onFrame(type, payload, link)) return;
     switch (type) {
-      case T.PING:
+      case T.PING: {
         this.#tx(link, encode(T.PONG, 0, payload));
+        // a Bridge 0.5+ tells the round trip it measured: no need to ping the remote for it
+        const rtt = pingRtt(payload);
+        if (rtt >= 0 && rtt < 60000) {
+          link.rttMs = rtt;
+          this.net.rtt(link.remote, rtt);
+        }
         return;
+      }
       case T.PONG: {
         const rtt = performance.now() - pingTime(payload);
         if (rtt >= 0 && rtt < 60000) {
@@ -243,6 +377,7 @@ export class LinkServer {
           link.cpuLast = c;
         }
         if (Array.isArray(st.log)) link.bridgeLog = st.log.slice(-200).map((l) => redact(String(l).slice(0, 500)));
+        if (Array.isArray(st.logAdd)) link.bridgeLog = [...(link.bridgeLog || []), ...st.logAdd.map((l) => redact(String(l).slice(0, 500)))].slice(-200);
         if (typeof st.standby === "boolean" && st.standby !== link.standby) {
           link.standby = st.standby;
           link.standbySince = Date.now();
@@ -319,26 +454,29 @@ export class LinkServer {
       for (const [buf, isBin] of s.queue) driverWs.send(buf, { binary: isBin });
       s.queue = [];
       s.queued = 0;
-      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encode(T.OPENED, channel));
+      this.#tx(link, encode(T.OPENED, channel));
     });
     driverWs.on("message", (data, isBinary) => {
-      if (link.ws.readyState !== WebSocket.OPEN) return;
+      // the link is away: with a Bridge that resumes, the session waits for it (below)
+      const away = () => link.ws.readyState !== WebSocket.OPEN;
+      if (link.ended || s.closed || (away() && !link.resumable)) return;
       const buf = Buffer.isBuffer(data) ? data : Buffer.concat(data);
       this.net.message(s.id, channel, "out", buf, !isBinary);
       // in order, per session: artwork may need a moment (inline pictures are scaled down)
       s.chain = s.chain.then(async () => {
         let b = buf;
         if (!isBinary && this.artwork) b = await this.artwork.rewrite(buf, hubBase(link)).catch(() => buf);
-        if (link.ws.readyState !== WebSocket.OPEN) return;
+        if (link.ended || s.closed || (away() && !link.resumable)) return;
         if (isBinary || !s.shaper) return this.#tx(link, encode(isBinary ? T.BIN : T.TEXT, channel, b));
-        for (const out of s.shaper.fromDriver(b, !!link.standby)) this.#tx(link, encode(T.TEXT, channel, out));
+        // a remote that is away is treated like a sleeping one: state updates are held and merged
+        for (const out of s.shaper.fromDriver(b, !!link.standby || away())) this.#tx(link, encode(T.TEXT, channel, out));
       }).catch(() => {});
     });
     driverWs.on("close", (code, reason) => {
       if (s.closed) return;
       s.closed = true;
       link.sessions.delete(channel);
-      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encodeClose(channel, safeCloseCode(code), reason.toString()));
+      this.#tx(link, encodeClose(channel, safeCloseCode(code), reason.toString()));
     });
     driverWs.on("error", (e) => {
       if (s.closed) return;
@@ -346,7 +484,7 @@ export class LinkServer {
       link.sessions.delete(channel);
       this.sup.note(meta.id, `link session failed: ${e.message}`);
       this.net.sessionFailed(meta.id);
-      if (link.ws.readyState === WebSocket.OPEN) this.#tx(link, encode(T.OPEN_FAIL, channel, e.message));
+      this.#tx(link, encode(T.OPEN_FAIL, channel, e.message));
     });
   }
 
@@ -365,16 +503,23 @@ export class LinkServer {
 
   /** Drops all sessions of one hosted driver (e.g. it is being restarted or updated). */
   dropDriver(id) {
-    for (const link of this.links) for (const [ch, s] of link.sessions) if (s.id === id) this.#endSession(link, ch, s, 1012, "driver restarting", true);
+    for (const link of [...this.links, ...this.parked.values()]) for (const [ch, s] of link.sessions) if (s.id === id) this.#endSession(link, ch, s, 1012, "driver restarting", true);
   }
 
   /** Disconnects every bridge (e.g. new pairing code); they reconnect and must pass the new code. */
   disconnectAll(code = 1001, reason = "hub stopping") {
-    for (const l of this.links) l.ws.close(code, reason);
+    // their sessions end too: a Bridge that comes back must start over (e.g. with the new code)
+    for (const l of [...this.parked.values(), ...this.links]) {
+      const ws = l.ws;
+      if (l.ready) this.#endLink(l, null, { keepSocket: true });
+      if (ws.readyState <= WebSocket.OPEN) ws.close(code, reason);
+    }
   }
 
   close() {
+    this.closing = true;
     clearInterval(this.pingTimer);
+    for (const l of [...this.parked.values()]) this.#endLink(l);
     this.disconnectAll();
   }
 }

@@ -1,14 +1,29 @@
 // Bridge side of the Pegasus link: one persistent WebSocket to the hub carrying every driver
 // session as a numbered channel. Reconnects by itself, measures round-trip time.
+//
+// Easy on the remote's battery and quick after waking:
+//  - awake and quiet, it checks in every 15 s (each check-in wakes the Wi-Fi radio); asleep, never
+//  - a dead link is found when it matters: when the remote wakes, and when something is sent after
+//    a quiet spell (a check-in goes with it; no answer within a moment and the link is replaced)
+//  - a replaced link resumes the sessions that were on it (hub 0.12+): nothing is lost, the
+//    remote's core doesn't have to reconnect and ask every integration for everything again
 
 import { EventEmitter } from "node:events";
 import { WebSocket } from "ws";
-import { T, PROTO_VERSION, encode, decode, json, parseJson, encodeClose, decodeClose, pingPayload, pingTime, Rpc } from "./linkproto.js";
+import { T, PROTO_VERSION, encode, decode, json, parseJson, encodeClose, decodeClose, pingPayload, pingTime, isChannelFrame, SendWindow, Rpc } from "./linkproto.js";
 
-// awake: check in after 5 s of silence, give up after 15 s; standby: once a minute, give up after 3 min
-const AWAKE = { ping: 5000, dead: 15000 };
-const ASLEEP = { ping: 60000, dead: 180000 };
-const WAKE_CHECK_MS = 1500; // on wake, a link that does not answer within this is replaced
+// awake: check in after 15 s of silence, give up after 35 s. A hub before 0.12 expects to hear
+// something every 20 s and checks in itself every 5 s, which keeps the link alive there.
+const AWAKE = { tick: 5000, ping: 15000, dead: 35000 };
+// On wake, a link that does not answer within this is replaced. With a hub that resumes sessions
+// a needless replacement costs one handshake and loses nothing, so it can be quick; without, it
+// would make the core reconnect every integration.
+const WAKE_CHECK_MS = { resume: 400, plain: 1500 };
+const PROBE_AFTER_MS = 3000; // sending after this much silence: check the link along with it
+const PROBE_MS = 1000; // ...and replace it if nothing at all comes back within this (hubs that resume)
+const FAST_RETRIES = 12; // reconnect attempts every 250 ms (about 3 s) before backing off
+const RESUME_GRACE_MS = 8000; // awake without the hub for this long: sessions are given up
+const WINDOW = { maxFrames: 512, maxBytes: 1024 * 1024 }; // frames kept for resume (on the remote)
 
 export class LinkClient extends EventEmitter {
   /**
@@ -40,6 +55,19 @@ export class LinkClient extends EventEmitter {
     this.lastPing = 0;
     this.rpcHandlers = new Map();
     this.rpc = null;
+    // resume (hub 0.12+): the link session's id, the frames sent on it, how many were received
+    this.session = null;
+    this.win = new SendWindow(WINDOW);
+    this.rx = 0;
+    this.suspended = false; // the link is away but its sessions are kept
+    this.resumed = false; // the current link took over the sessions of the one before
+    this.hubCaps = [];
+    this.stats = { resumes: 0, replayed: 0, pings: 0 };
+  }
+
+  /** The hub supports this (e.g. "resume", "delta"). */
+  hubCan(cap) {
+    return this.hubCaps.includes(cap);
   }
 
   /** Answers requests from the hub: handle("move.toHub", async (params) => result). */
@@ -61,25 +89,91 @@ export class LinkClient extends EventEmitter {
     const ws = this.ws;
     if (this.up && ws?.readyState === WebSocket.OPEN) ws.send(json(T.STATUS, { standby: on }));
     this.#armHeartbeat();
-    if (on) return;
+    if (on) {
+      clearTimeout(this.graceTimer); // asleep, the sessions wait for as long as the hub keeps them
+      return;
+    }
     // Woke up. The link may have died while the radio slept, and a dead TCP connection can take
     // many seconds to notice: probe it now and replace it quickly if it stays silent.
+    if (this.suspended) this.#armGrace();
     if (!this.up) {
       clearTimeout(this.retryTimer);
       this.retry = 0;
       if (!this.stopped && (!this.ws || this.ws.readyState > WebSocket.OPEN)) this.#connect();
       return;
     }
+    this.#probe(this.hubCan("resume") ? WAKE_CHECK_MS.resume : WAKE_CHECK_MS.plain, "link did not answer after wake, reconnecting", true);
+  }
+
+  /** Checks the link now; if nothing at all is heard within ms, it is replaced. */
+  #probe(ms, why, restart = false) {
+    const ws = this.ws;
+    if (!this.up || ws?.readyState !== WebSocket.OPEN || (this.probing && !restart)) return;
     const sentAt = Date.now();
+    this.probing = true;
     this.#ping();
     clearTimeout(this.wakeTimer);
     this.wakeTimer = setTimeout(() => {
+      this.probing = false;
       if (this.ws === ws && this.lastHeard < sentAt) {
-        this.log("link did not answer after wake, reconnecting");
+        this.log(why);
         this.retry = 0;
         ws.terminate();
       }
-    }, WAKE_CHECK_MS);
+    }, ms);
+  }
+
+  /** The sessions of a lost link are kept this long (while awake) for the next link to take over. */
+  #armGrace() {
+    clearTimeout(this.graceTimer);
+    this.graceTimer = setTimeout(() => {
+      if (!this.suspended) return;
+      this.log("hub still away: closing the sessions that were waiting for it");
+      this.#giveUp();
+    }, RESUME_GRACE_MS);
+  }
+
+  /** Ends the sessions of a link that can't be resumed. */
+  #giveUp() {
+    clearTimeout(this.graceTimer);
+    this.suspended = false;
+    this.session = null;
+    this.win = new SendWindow(WINDOW);
+    this.rx = 0;
+    for (const ch of this.channels.values()) ch._ended(1012, "hub link lost");
+    this.channels.clear();
+  }
+
+  /**
+   * Sends a session frame: remembered for resume, sent now if the link is up (else when the next
+   * link takes the session over). False if there is no link and no session to wait for.
+   */
+  #sendCh(frame) {
+    const live = this.up && this.ws?.readyState === WebSocket.OPEN;
+    // (a connection that is closing but hasn't said so yet counts as away: the frame waits)
+    if (this.session) this.win.push(frame);
+    else if (!live) return false;
+    if (live) {
+      this.#write(frame);
+      // something is being asked of the hub after a quiet spell: make sure it is still there
+      if (this.session && Date.now() - this.lastHeard > PROBE_AFTER_MS) this.#probe(PROBE_MS, "hub did not answer, reconnecting");
+    }
+    return true;
+  }
+
+  /** Writes to the socket; frames written in the same turn leave in one packet. */
+  #write(frame) {
+    const ws = this.ws;
+    const sock = ws._socket;
+    if (sock && !this.corked) {
+      this.corked = true;
+      sock.cork();
+      process.nextTick(() => {
+        this.corked = false;
+        sock.uncork();
+      });
+    }
+    ws.send(frame);
   }
 
   /** Tells the hub about this remote (e.g. which ID each integration got here). */
@@ -90,14 +184,27 @@ export class LinkClient extends EventEmitter {
   #ping() {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
     this.lastPing = Date.now();
-    this.ws.send(encode(T.PING, 0, pingPayload()));
+    this.stats.pings++;
+    this.ws.send(encode(T.PING, 0, pingPayload(performance.now(), this.rttMs)));
   }
 
-  /** One timer at the current check-in interval; pings only when the link has been quiet. */
+  /**
+   * Awake: pings when the link has been quiet for a while. Asleep: nothing at all (the radio can
+   * stay off; the link is checked the moment the remote wakes). A hub before 0.12 drops a link
+   * it hasn't heard from in 3 minutes of standby, so there the once-a-minute check-in stays.
+   */
   #armHeartbeat() {
     clearInterval(this.pingTimer);
     if (!this.up) return;
-    const t = this.standby ? ASLEEP : AWAKE;
+    if (this.standby) {
+      if (this.hubCan("resume")) return;
+      this.pingTimer = setInterval(() => {
+        if (Date.now() - this.lastHeard > 180000) return this.ws?.terminate();
+        if (Date.now() - this.lastHeard >= 59000) this.#ping();
+      }, 60000);
+      return;
+    }
+    const t = AWAKE;
     this.pingTimer = setInterval(() => {
       const quiet = Date.now() - this.lastHeard;
       if (quiet > t.dead) {
@@ -105,7 +212,7 @@ export class LinkClient extends EventEmitter {
         return this.ws?.terminate();
       }
       if (quiet >= t.ping - 50 && Date.now() - this.lastPing >= t.ping - 50) this.#ping();
-    }, t.ping);
+    }, t.tick);
   }
 
   url() {
@@ -122,9 +229,11 @@ export class LinkClient extends EventEmitter {
     this.stopped = true;
     clearTimeout(this.retryTimer);
     clearTimeout(this.wakeTimer);
+    clearTimeout(this.graceTimer);
     clearInterval(this.pingTimer);
     this.ws?.terminate();
     this.ws = null;
+    this.#giveUp();
   }
 
   #setState(state, reason = "") {
@@ -145,7 +254,8 @@ export class LinkClient extends EventEmitter {
       // lan: the remote's own address on the way to the hub (a hub in a Docker bridge network may
       // only see the gateway's address)
       const lan = String(ws._socket?.localAddress || "").replace(/^::ffff:/, "");
-      ws.send(json(T.HELLO, { proto: PROTO_VERSION, token: this.token, bridge: this.version, remote: this.remote, standby: this.standby, ...(lan ? { lan } : {}) }));
+      const resume = this.suspended && this.session ? { resume: { id: this.session, rx: this.rx } } : {};
+      ws.send(json(T.HELLO, { proto: PROTO_VERSION, token: this.token, bridge: this.version, remote: this.remote, standby: this.standby, caps: ["resume", "delta"], ...resume, ...(lan ? { lan } : {}) }));
     });
 
     ws.on("message", (data, isBinary) => {
@@ -153,14 +263,41 @@ export class LinkClient extends EventEmitter {
       this.lastHeard = Date.now(); // any frame proves the hub is alive
       const f = decode(data);
       if (!f) return;
+      if (isChannelFrame(f.type)) this.rx++;
       switch (f.type) {
         case T.WELCOME: {
           const w = parseJson(f.payload) || {};
+          this.hubCaps = Array.isArray(w.caps) ? w.caps.map(String) : [];
+          this.hubInfo = { name: w.hub, version: w.version, batteryUpTo: Number(w.batteryUpTo) || 0 };
+          // take over the sessions of the link before, if the hub kept them and nothing is missing
+          const r = w.resume;
+          const takeOver = this.suspended && this.session && w.session === this.session && r && this.win.covers(r.rx);
+          if (takeOver) {
+            const again = this.win.after(r.rx);
+            ws._socket?.cork();
+            for (const frame of again) ws.send(frame);
+            ws._socket?.uncork();
+            this.stats.resumes++;
+            this.stats.replayed += again.length;
+            clearTimeout(this.graceTimer);
+            this.suspended = false;
+            this.log(`link back at ${this.url()}: ${this.channels.size} session(s) carried on${again.length ? `, ${again.length} message(s) sent again` : ""}`);
+          } else {
+            if (this.suspended) this.log("the hub no longer has the sessions of the link before: starting them again");
+            this.#giveUp();
+            if (r) {
+              // the hub resumed but this end can't (too much was sent meanwhile): start clean
+              this.retry = 0;
+              return ws.terminate();
+            }
+            this.session = this.hubCaps.includes("resume") && typeof w.session === "string" ? w.session : null;
+            this.log(`linked to ${w.hub} ${w.version} at ${this.url()}`);
+          }
+          this.resumed = !!takeOver;
           this.up = true;
           this.rpc = rpc;
           this.retry = 0;
-          this.hubInfo = { name: w.hub, version: w.version };
-          this.log(`linked to ${w.hub} ${w.version} at ${this.url()}`);
+          this.probing = false;
           this.#setState("up");
           this.emit("catalog", w.drivers || [], removedIds(w));
           this.#armHeartbeat();
@@ -193,20 +330,30 @@ export class LinkClient extends EventEmitter {
       }
     });
 
-    ws.on("close", () => {
+    ws.on("close", (code) => {
       rpc.failAll("hub link lost");
       if (this.rpc === rpc) this.rpc = null;
       clearInterval(this.pingTimer);
       clearTimeout(this.wakeTimer);
       const wasUp = this.up;
       this.up = false;
+      this.probing = false;
       if (this.ws === ws) this.ws = null;
-      for (const ch of this.channels.values()) ch._ended(1012, "hub link lost");
-      this.channels.clear();
+      // keep the sessions for the next link to take over (hub 0.12+); else they end here
+      // (1001: the hub is stopping or wants every Bridge to start over; it kept nothing)
+      if (wasUp && this.session && !this.stopped && this.state !== "denied" && code !== 1001) {
+        if (!this.suspended) {
+          this.suspended = true;
+          if (!this.standby) this.#armGrace();
+        }
+      } else if (!this.suspended || this.state === "denied") this.#giveUp();
       if (this.state !== "denied") this.#setState("down", wasUp ? "link lost" : "hub not reachable");
       if (this.stopped) return;
-      // denied: the pairing code is wrong; try again slowly (the hub may have been reset)
-      const delay = this.state === "denied" ? 60000 : Math.min(this.standby ? 60000 : 10000, 300 * 2 ** this.retry++);
+      // denied: the pairing code is wrong; try again slowly (the hub may have been reset).
+      // Otherwise at once when a working link broke (not when the hub said goodbye), then every
+      // 250 ms for a few seconds (after waking, Wi-Fi needs a moment), then backing off.
+      const n = this.retry++;
+      const delay = this.state === "denied" ? 60000 : n < FAST_RETRIES && !this.standby ? (wasUp && n === 0 && code !== 1001 ? 10 : n === 0 ? 300 : 250) : Math.min(this.standby ? 60000 : 10000, 300 * 2 ** (n - (this.standby ? 0 : FAST_RETRIES)));
       this.retryTimer = setTimeout(() => this.#connect(), delay);
     });
     ws.on("error", (e) => {
@@ -240,21 +387,20 @@ export class LinkClient extends EventEmitter {
    * the driver connection is up). Handlers: onText(buf), onBin(buf), onClose(code, reason), onOpened().
    */
   open(remoteId, handlers) {
-    if (!this.up || !this.ws) return null;
+    if (!(this.up && this.ws) && !this.suspended) return null;
     const id = this.nextChannel++;
     if (this.nextChannel > 0xfffffff0) this.nextChannel = 1;
-    const ws = this.ws;
     let ended = false;
     const ch = {
       id,
       ...handlers,
-      sendText: (buf) => ws.readyState === WebSocket.OPEN && ws.send(encode(T.TEXT, id, buf)),
-      sendBin: (buf) => ws.readyState === WebSocket.OPEN && ws.send(encode(T.BIN, id, buf)),
+      sendText: (buf) => !ended && this.#sendCh(encode(T.TEXT, id, buf)),
+      sendBin: (buf) => !ended && this.#sendCh(encode(T.BIN, id, buf)),
       close: (code = 1000, reason = "") => {
         if (ended) return;
         ended = true;
         this.channels.delete(id);
-        if (ws.readyState === WebSocket.OPEN) ws.send(encodeClose(id, code, reason));
+        this.#sendCh(encodeClose(id, code, reason));
       },
       _ended: (code, reason) => {
         if (ended) return;
@@ -263,7 +409,7 @@ export class LinkClient extends EventEmitter {
       }
     };
     this.channels.set(id, ch);
-    ws.send(encode(T.OPEN, id, remoteId));
+    this.#sendCh(encode(T.OPEN, id, remoteId));
     return ch;
   }
 }

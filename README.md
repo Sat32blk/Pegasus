@@ -153,7 +153,9 @@ Good to know:
 - One persistent WebSocket for every integration; no handshake per driver, and it's already open when the remote wakes.
 - Messages pass through as raw bytes with a 5-byte header (type + channel). About **0.2 ms added per request** on a LAN.
 - No added round trips: a session's first messages follow its OPEN frame; `TCP_NODELAY` everywhere.
-- Standby-aware heartbeat: while the remote sleeps the hub checks in once a minute and is otherwise silent; on wake the Bridge checks the link at once.
+- Quiet heartbeat: awake and idle, the Bridge checks in every 15 s (every check-in wakes the Wi-Fi radio); while the remote sleeps nothing is sent at all. A dead link is found when it matters: the moment the remote wakes, and when something is sent after a quiet spell.
+- **Sessions survive a lost link** (hub 0.12 + Bridge 0.5): when the connection dies while the remote sleeps, or Wi-Fi blinks, a new one takes over where the old one stopped. Both ends send again what the other missed, so the remote doesn't reconnect every integration and ask for everything again, and a press made right after waking isn't lost. Measured with 8 integrations: first press after waking on a dead link answered in 0.4 s instead of 1.8 s, with 4 messages over Wi-Fi instead of 69.
+- Messages written in the same moment leave in one packet.
 
 **Traffic the remote doesn't need** (per integration, in the hub)
 - Updates for devices the remote doesn't use, and exact repeats, are dropped.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { T, encode, decode, encodeClose, decodeClose, remoteDriverId, safeCloseCode, pingPayload, pingTime } from "../shared/linkproto.js";
+import { pingRtt, isChannelFrame, SendWindow, T, encode, decode, encodeClose, decodeClose, remoteDriverId, safeCloseCode, pingPayload, pingTime } from "../shared/linkproto.js";
 
 // copies in sync
 const src = fs.readFileSync(new URL("../shared/linkproto.js", import.meta.url), "utf8");
@@ -24,4 +24,24 @@ assert.equal(safeCloseCode(1006), 1000);
 assert.equal(safeCloseCode(1012), 1012);
 assert.equal(safeCloseCode(4001), 4001);
 assert.equal(pingTime(pingPayload(123.5)), 123.5);
+// the Bridge tells its last round trip along with a ping; plain pings carry none
+assert.equal(pingRtt(pingPayload(1, 4.25)), 4.25);
+assert.ok(Number.isNaN(pingRtt(pingPayload(1))));
+assert.equal(pingTime(pingPayload(9, 4.25)), 9);
+assert.ok(isChannelFrame(T.TEXT) && isChannelFrame(T.OPEN) && isChannelFrame(T.CLOSE) && !isChannelFrame(T.PING) && !isChannelFrame(T.RPC) && !isChannelFrame(T.STATUS));
+// resume: the frames sent, numbered; what the other end missed can be sent again while it's kept
+{
+  const w = new SendWindow({ maxFrames: 3, maxBytes: 100 });
+  assert.ok(w.covers(0) && !w.covers(1));
+  for (const x of ["a", "b", "c"]) w.push(Buffer.from(x));
+  assert.deepEqual(w.after(1).map(String), ["b", "c"]);
+  assert.deepEqual(w.after(3), []);
+  assert.ok(w.covers(0) && w.covers(3) && !w.covers(4) && !w.covers(-1) && !w.covers(1.5));
+  w.push(Buffer.from("d")); // "a" is gone now
+  assert.ok(!w.covers(0) && w.covers(1));
+  assert.deepEqual(w.after(1).map(String), ["b", "c", "d"]);
+  w.push(Buffer.alloc(100)); // too many bytes: only the newest stays
+  assert.equal(w.frames.length, 1);
+  assert.ok(!w.covers(3) && w.covers(4) && w.covers(5));
+}
 console.log("proto-test: ok");
